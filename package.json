@@ -41,6 +41,7 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "check:isolation": "node scripts/check-isolation.mjs",
+    "acceptance:fm": "node scripts/fm-acceptance.mjs",
     "prepare": "node internal/module_scripts/prepare.js",
     "open:ios": "node internal/module_scripts/open-ios.js",
     "open:android": "node internal/module_scripts/open-android.js"
