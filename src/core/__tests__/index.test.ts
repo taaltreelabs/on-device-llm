@@ -28,15 +28,17 @@ import {
 import * as core from '../index';
 
 describe('core public API', () => {
-  it('exports the runtime surface Phase 1 plus the Phase 2 foundations promise, and no default export', () => {
+  it('exports the runtime surface Phases 1-2 promise, and no default export', () => {
     expect(Object.keys(core).sort()).toEqual([
       'DEFAULT_CHARS_PER_TOKEN',
+      'DEFAULT_KEEP_RECENT_TURNS',
       'DEFAULT_MAX_SUMMARY_TOKENS',
       'DEFAULT_PER_MESSAGE_OVERHEAD_TOKENS',
       'DEFAULT_RESERVED_FOR_OUTPUT_TOKENS',
       'DEFAULT_SAFETY_MARGIN_ESTIMATED_TOKENS',
       'DEFAULT_SAFETY_MARGIN_EXACT_TOKENS',
       'DEFAULT_SUMMARY_MARKER',
+      'DEFAULT_SUMMARY_THRESHOLD',
       'DEFAULT_SYSTEM_STATE_MARKER',
       'LLMError',
       'MockProvider',
@@ -48,6 +50,7 @@ describe('core public API', () => {
       'createSummaryMessage',
       'defaultSummaryPrompt',
       'estimateTokens',
+      'fitContext',
       'isAbortError',
       'isBoundedBudget',
       'isLLMError',
@@ -55,6 +58,9 @@ describe('core public API', () => {
       'isUnknown',
       'measureMessages',
       'normalizeContextWindow',
+      'projectMessages',
+      'rollingSummary',
+      'slidingWindow',
       'stripSystemState',
       'summaryText',
       'toLLMError',

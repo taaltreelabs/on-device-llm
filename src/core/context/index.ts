@@ -6,9 +6,8 @@
  * input: you own the conversation array, you hand it in, you get a new one
  * back plus the metadata explaining what changed.
  *
- * The trimming strategies and the `fitContext` entry point that dispatches to
- * them build on the pieces exported here: a budget, a way to measure, and the
- * rules for reading a conversation's pins and turns.
+ * Start with {@link fitContext}. Reach for the strategies directly only when
+ * you are composing something of your own.
  *
  * The one piece of advice worth reading before anything else is in
  * `system-state.ts`: if your app has state the model needs, render it into the
@@ -28,6 +27,14 @@ export {
   type UnboundedContextBudget,
 } from './budget';
 export {
+  fitContext,
+  type ContextStrategy,
+  type FitContextOptions,
+  type RollingSummaryConfig,
+  type StrategySelection,
+  type UnknownContextWindowPolicy,
+} from './fit';
+export {
   analyzeConversation,
   type AnalyzeConversationOptions,
   type ConversationLayout,
@@ -43,6 +50,26 @@ export {
   type TokenMeasurementKind,
   type TokenMeasurementSource,
 } from './measure';
+export {
+  type ContextStrategyName,
+  type ContextWarning,
+  type ContextWarningCode,
+  type FitContextResult,
+  type SummaryOutcome,
+} from './result';
+export {
+  rollingSummary,
+  DEFAULT_KEEP_RECENT_TURNS,
+  DEFAULT_SUMMARY_THRESHOLD,
+  type RollingSummaryOptions,
+  type SummarizerErrorPolicy,
+} from './rolling-summary';
+export {
+  projectMessages,
+  slidingWindow,
+  type SlidingWindowOptions,
+  type StrategyEnvironment,
+} from './sliding-window';
 export {
   createSummaryMessage,
   defaultSummaryPrompt,
