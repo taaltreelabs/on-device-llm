@@ -2,6 +2,57 @@
 
 Newest first. Each entry: what was decided, why, and what evidence it rests on. Supporting research lives in `docs/research/`.
 
+## 2026-09-21 — Phase 3 steps 1–3 (Apple native provider)
+
+### D16: Classic Expo definition DSL, not the macro-based Modules API 2.0
+
+`expo-modules-core` 57.0.18 ships both. The macro surface (`@ExpoModule`, `@JS`, `@Event`, `@Record`, `@OptimizedFunction`) is real and its compiler plugin is a direct dependency of `expo-modules-core`, so it would work here. We use the classic DSL anyway, for three reasons:
+
+1. **There is almost nothing for the macros to generate.** The bridge is five async functions and one event, and all the FoundationModels logic lives in `ios/Core/*.swift`, which imports no Expo at all. `OnDeviceLlmModule.swift` is ~170 lines of glue; macros would save perhaps fifteen.
+2. **The classic DSL needs no compiler plugin on the command line.** Macro expansion requires `-Xfrontend -load-plugin-executable …/ExpoModulesMacros-tool#ExpoModulesMacros`, which CocoaPods injects for us today. Any consumer integration that does not — a hand-rolled Xcode target, a prebuilt-pod cache, a future SPM path — turns `@ExpoModule` into a hard compile error, while the DSL is ordinary Swift.
+3. **`@JS` statically asserts that every type crossing the boundary is JS-convertible.** Our payloads are heterogeneous `[String: Any]` dictionaries (an error carrying `contextSize: Int`, `resetDate: Double`, `nativeDomain: String`), which the DSL's `Any`-typed returns handle naturally and the macro's conformance assertions fight.
+
+Revisit if the native surface grows past roughly a dozen functions, where the DSL's builder blocks start to dominate the file.
+
+### D17: The trailing user message is the `respond()` prompt, not a transcript entry
+
+`LanguageModelSession(model:tools:transcript:)` seeds a session with *completed* turns; `respond(to:)` appends a new `.prompt` entry and generates its `.response`. So the transcript and the prompt are not interchangeable, and the request has to split:
+
+- Last message also in the transcript → the model sees the question twice, and the turn's `transcriptEntries` stop matching the conversation.
+- Last message only in the transcript, `respond(to: "")` → an undocumented shape that leaves a stray empty prompt entry.
+
+`TranscriptBuilder.prepare` therefore puts everything *before* the trailing user message into the transcript and passes that message as the prompt. **A request that does not end with a user message is rejected as `invalidRequest`** — the framework has no "continue your own last message" affordance — and the check is duplicated in TypeScript (`buildNativeRequest`) so it costs no bridge hop.
+
+**System messages** fold into the single leading `.instructions` entry, in their original order. `Transcript.Instructions` must be first and there is only one of it (sdk-surface.md §6), while a JS conversation can carry `system` messages anywhere — a Phase 2 rolling summary (D13) is a non-pinned `system` message sitting in front of the retained turns. Relative order among them is preserved; their position *between* turns is not, because the transcript cannot express it. Verified against the live model: the harness builds `[system, user, assistant, system(summary), user]` and gets a 3-entry transcript (instructions + prompt + response) plus the right prompt, and `LanguageModelSession(transcript:)` round-trips it.
+
+### D18: A non-extending snapshot emits the suffix past the common prefix, flagged `reset`; `finish.text` is authoritative
+
+`ResponseStream` yields cumulative snapshots (D5), so the bridge diffs them. In the normal case each snapshot extends the last and the deltas concatenate *exactly* to the final text — asserted against the real model in the harness, and 0 resets observed.
+
+A snapshot that is **not** an extension means the model rewrote text already handed to the consumer, and a delta stream physically cannot retract it. Of the three possible policies — stall the stream (the UI freezes mid-sentence), re-emit the whole snapshot (duplicates far more text), or emit only what is new past the longest common prefix — we take the third, flag it `reset: true` on the wire, and treat the `finish` event's `text` (always the last snapshot, never the concatenation) as authoritative. A consumer that renders deltas live and then swaps in the final text always converges.
+
+`reset` is surfaced rather than swallowed so the case stays observable if the framework's behaviour ever changes. It has never been seen for `Content == String`; this is a guard, not a workaround.
+
+### D19: A configured locale the model does not support makes `availability()` unavailable, with reason `deviceNotEligible`
+
+D7 established that `UnavailableReason` has exactly three cases and none is locale-related. That leaves the question of what `availability()` should say when `createAppleProvider({ locale })` names a language the model lacks. Options were: stay `available: true` and let generation fail, or map onto one of the three.
+
+We map it, to `deviceNotEligible`, with the real reason in `detail`. The deciding evidence is a harness run against the live model: a fully Polish prompt (`pl` is **not** in `supportedLanguages`, confirmed by `supportsLocale`) was answered in fluent Polish rather than raising `unsupportedLanguageOrLocale`. **The generation-time error cannot be relied on**, so the `supportsLocale` pre-check is the only honest signal, and a provider that reports itself available for a language it cannot serve would have the Phase 4 router burn a generation per turn. Of the three reasons, `deviceNotEligible` is the only permanent, non-retryable one, which is what this is.
+
+The check runs in `availability()` only, not per request: its answer cannot change while the process runs, and a bridge hop per `generate` to re-derive it would be pure cost. `AppleProvider.supportsLocale(tag)` is also exposed so an app can ask directly. A `capabilities().locales` entry is the *minimal* BCP-47 identifier (`nl`, `en-GB`, `es-419`) — note the discrepancy with sdk-surface.md §1, which lists the *maximal* form (`nl-Latn-NL`); the minimal form is what `Intl` and `navigator.language` produce, and exact matching should go through `supportsLocale` regardless.
+
+### D20: Errors are returned across the bridge, not thrown
+
+`generate` resolves to `{ ok: true, result } | { ok: false, error }`, and `startStream` reports every outcome — including failures and cancellation — as an `onStreamEvent` event. Expo's exception channel carries a code and a message; our taxonomy also carries `contextSize`/`tokenCount`, `resetDate`, `locale`, `transient`, and the native domain/code that D9 says we must never lose, none of which survives an `Exception`. Returning the payload also gives both paths one decoder in TypeScript, and it is what keeps a mid-stream failure from arriving as a rejected promise on a stream the consumer is already iterating.
+
+### D21: Cancellation needs an explicit `Task.checkCancellation()` after the stream loop — the SDK does not throw
+
+Measured, not assumed. `Task.cancel()` is the only cancellation mechanism the framework offers (there is no `stop()` on `LanguageModelSession`, sdk-surface.md §3), and a cancelled `respond` does throw `CancellationError` promptly. But a cancelled **`ResponseStream` does not throw**: the `for try await` loop simply ends, so the first implementation reported a perfectly ordinary `finish` for a generation the caller had stopped. The harness caught this on its first run against the live model. `GenerationEngine.stream` now checks cancellation after the loop as well as inside it, and both `generate` and `stream` surface an abort as `cancelled` rather than as a successful result — including the race where native finishes normally between `abort()` firing and `cancel()` landing, which `AppleProvider.generate` discards.
+
+### D22: The example app must set an iOS 27 deployment target or the module is silently not linked
+
+Not a design decision so much as a trap worth recording. `expo-modules-autolinking`'s CocoaPods integration filters modules by deployment target (`autolinking_manager.rb` → `pod.supports_platform?`). With the example's Podfile platform at the template default of 16.4 and our podspec at iOS 27.0 (D4), `pod install` **silently omits `OnDeviceLlm` entirely** — `Podfile.lock` has no entry, the app builds green, and `requireNativeModule('OnDeviceLlm')` fails at runtime. Raising `ios.deploymentTarget` to `27.0` links it; the app target's own `IPHONEOS_DEPLOYMENT_TARGET` must be raised too, or the app's Swift fails with *"compiling for iOS 16.4, but module 'OnDeviceLlm' has a minimum deployment target of iOS 27.0"*. With both raised, the example app builds clean for the iOS Simulator with zero warnings from our sources.
+
 ## 2026-09-21 — Phase 2 (context manager)
 
 ### D10: Budget defaults — 512 reserved for output, 64/256 safety margin, and measure *before* budgeting
