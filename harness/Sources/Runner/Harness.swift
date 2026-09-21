@@ -17,21 +17,41 @@ actor Harness {
   private(set) var failed = 0
   private var failures: [String] = []
 
-  func check(_ name: String, _ body: () async throws -> Void) async {
+  /// Run one check under a hard deadline.
+  ///
+  /// The deadline is not belt-and-braces: the failures this harness exists to
+  /// catch — a tool-call continuation nobody resumes, a stream that never
+  /// terminates — are exactly the ones that would otherwise hang the runner
+  /// forever with no output. A check that blows its deadline is reported as a
+  /// failure and *abandoned* (its task is cancelled but not awaited, so a truly
+  /// stuck task cannot take the summary down with it).
+  func check(
+    _ name: String,
+    timeout: Duration = .seconds(90),
+    _ body: @escaping @Sendable () async throws -> Void
+  ) async {
+    log("  ....  \(name)")
     do {
-      try await body()
+      try await withDeadline(timeout, name: name, body)
       passed += 1
-      print("  PASS  \(name)")
+      log("  PASS  \(name)")
     } catch {
       failed += 1
       let reason = (error as? CheckFailure)?.message ?? String(describing: error)
       failures.append("\(name): \(reason)")
-      print("  FAIL  \(name)\n        \(reason)")
+      log("  FAIL  \(name)\n        \(reason)")
     }
   }
 
   func section(_ name: String) {
-    print("\n\(name)")
+    log("\n\(name)")
+  }
+
+  /// Unbuffered: a harness that stalls must still have shown what it stalled
+  /// on, and stdout to a pipe is block-buffered by default.
+  private func log(_ line: String) {
+    print(line)
+    fflush(stdout)
   }
 
   /// Prints the summary and returns the process exit code.
@@ -46,6 +66,78 @@ actor Harness {
 
 struct CheckFailure: Error {
   let message: String
+}
+
+/// Race `body` against a deadline, resuming whichever finishes first.
+///
+/// Deliberately *not* a `withThrowingTaskGroup`: a task group awaits its
+/// children when the scope exits, so a child that ignores cancellation — which
+/// is precisely what a leaked continuation does — would hang the runner even
+/// though the deadline fired. An unstructured task plus a resume-once box lets
+/// the runner walk away from it.
+func withDeadline(
+  _ duration: Duration,
+  name: String,
+  _ body: @escaping @Sendable () async throws -> Void
+) async throws {
+  let box = ResumeOnce()
+  let work = Task { @Sendable in
+    do {
+      try await body()
+      box.finish(.success(()))
+    } catch {
+      box.finish(.failure(error))
+    }
+  }
+  let timer = Task { @Sendable in
+    try? await Task.sleep(for: duration)
+    if Task.isCancelled { return }
+    work.cancel()
+    box.finish(
+      .failure(
+        CheckFailure(
+          message:
+            "timed out after \(duration) — the check was abandoned, something is not resuming")))
+  }
+  defer { timer.cancel() }
+  try await box.value
+}
+
+/// A `Result` that can be delivered from either of two racing tasks, exactly
+/// once, to one awaiting caller.
+final class ResumeOnce: @unchecked Sendable {
+  private let lock = NSLock()
+  private var result: Result<Void, Error>?
+  private var continuation: CheckedContinuation<Void, Error>?
+
+  func finish(_ value: Result<Void, Error>) {
+    lock.lock()
+    guard result == nil else {
+      lock.unlock()
+      return
+    }
+    result = value
+    let waiter = continuation
+    continuation = nil
+    lock.unlock()
+    waiter?.resume(with: value)
+  }
+
+  var value: Void {
+    get async throws {
+      try await withCheckedThrowingContinuation {
+        (continuation: CheckedContinuation<Void, Error>) in
+        lock.lock()
+        if let result {
+          lock.unlock()
+          continuation.resume(with: result)
+          return
+        }
+        self.continuation = continuation
+        lock.unlock()
+      }
+    }
+  }
 }
 
 func expect(_ condition: Bool, _ message: @autoclosure () -> String) throws {
