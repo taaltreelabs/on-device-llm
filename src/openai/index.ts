@@ -13,14 +13,24 @@
  * and web-standard APIs. This is enforced by the ESLint isolation rule
  * (eslint.config.cjs) and by `scripts/check-isolation.mjs`
  * (`npm run check:isolation`) against the built output.
- *
- * Nothing here yet — this is a Phase 0 scaffold placeholder.
  */
 
-/** Marks this module as present; replaced by real exports in Phase 1. */
-export const OPENAI_PLACEHOLDER = true;
+import { OpenAIProvider, type OpenAIProviderConfig } from './provider';
+import type { LLMProvider } from '../core';
 
-/** Placeholder for the future OpenAI-compatible provider config shape. */
-export type OpenAIProviderConfig = {
-  baseUrl: string;
-};
+export { OpenAIProvider, type OpenAIProviderConfig } from './provider';
+
+/**
+ * Build an `LLMProvider` backed by a Chat Completions-compatible HTTP
+ * endpoint.
+ *
+ * ```ts
+ * const provider = createOpenAIProvider({
+ *   baseUrl: 'http://127.0.0.1:1976/v1', // fm serve, in development
+ *   model: 'system',
+ * });
+ * ```
+ */
+export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider {
+  return new OpenAIProvider(config);
+}
