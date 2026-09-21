@@ -21,7 +21,7 @@
  * checking).
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -58,11 +58,26 @@ function extractSpecifiers(source) {
   return specifiers;
 }
 
-/** Resolve a relative require/import specifier to an on-disk .js file, CJS-style. */
+/**
+ * Resolve a relative require/import specifier to an on-disk .js file,
+ * CJS-style.
+ *
+ * A specifier can point at a *directory* (`require("../core")` resolving to
+ * `../core/index.js`) — checked first and exclusively, because `../core`
+ * itself exists as a directory and naively trying it as a candidate file
+ * would hand `readFileSync` a directory and crash with `EISDIR`.
+ */
 function resolveRelative(fromFile, specifier) {
   const base = path.resolve(path.dirname(fromFile), specifier);
-  const candidates = [base, `${base}.js`, path.join(base, 'index.js')];
-  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+  if (existsSync(base) && statSync(base).isDirectory()) {
+    const indexFile = path.join(base, 'index.js');
+    return existsSync(indexFile) ? indexFile : null;
+  }
+  const candidates = [base, `${base}.js`];
+  return (
+    candidates.find((candidate) => existsSync(candidate) && !statSync(candidate).isDirectory()) ??
+    null
+  );
 }
 
 function walk(entry) {
