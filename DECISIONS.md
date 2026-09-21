@@ -2,6 +2,45 @@
 
 Newest first. Each entry: what was decided, why, and what evidence it rests on. Supporting research lives in `docs/research/`.
 
+## 2026-09-21 — Phase 2 (context manager)
+
+### D10: Budget defaults — 512 reserved for output, 64/256 safety margin, and measure *before* budgeting
+
+`budget = window - reservedForOutput - safetyMargin`, with `reservedForOutput` defaulting to 512 (a complete chat reply: ~350–400 English words; 12.5% of a 4K window, 6% of 8K) and the safety margin defaulting to 64 when tokens were counted exactly and **256 when they were estimated**. The margin is non-zero even for exact counts because `countTokens(messages)` cannot see the schema, tool declarations, or prompt prefix the provider adds at request time. It is four times larger for estimates because `estimateTokens`' chars/3.5 over-counts prose but *under*-counts dense text (code, CJK, URLs), and the over-count is not a margin we can rely on.
+
+Non-obvious consequence, and the reason for the ordering inside `fitContext`: the conversation is measured **first**, and the budget is computed from the kind of measurement that actually happened, not from the provider's advertised `tokenCounting`. A provider that claims `'exact'` and then throws (D9) is measuring by estimate, and must get the wider margin.
+
+### D11: An unknown `contextWindow` yields a typed unbounded budget; the default is to pass the conversation through untrimmed
+
+`ContextBudget` is a discriminated union (`bounded | unbounded`), not a number. Per D9 the window may be `UNKNOWN`, and both tempting substitutes are wrong: `Infinity` sends a doomed request while claiming it fits, `0` refuses every request. `fitContext`'s default `onUnknownContextWindow: 'passThrough'` returns the conversation untrimmed with `withinBudget: 'unknown'` and a warning, because (a) every cloud endpoint is in this state — our own `OpenAIProvider` defaults `contextWindow` to `UNKNOWN` — and failing them all would be worse than the status quo, and (b) if the request does overflow, the provider's own `contextOverflow` carries real `contextSize`/`tokenCount`, which beats any guess we could have made. `'error'` and an explicit `assumedContextWindow` are both available; trimming to a guessed limit is never the default.
+
+### D12: Turn pairing rules, including two fixes the property tests forced
+
+Turns are dropped whole and oldest-first, which is what makes "no orphaned assistant" fall out of the structure instead of being patched afterwards. The rules (full text in `src/core/context/layout.ts`): a turn opens at a `user` message; consecutive `user` messages merge into one turn (one reply answers both, so splitting strands half the prompt); consecutive `assistant` messages stay in the turn they answered; leading `assistant` messages form a prologue turn; a non-pinned `system` message (a rolling summary) forms a turn of its own; the newest turn is never dropped.
+
+Two of these were wrong in the first implementation and were caught by the fast-check properties, not by the hand-written tests:
+
+1. A non-pinned `system` message standing alone *unconditionally* split `[user, system, assistant]` into three turns, leaving the assistant as the newest turn — a textbook orphan. It now joins a turn that has not been answered yet.
+2. `rollingSummary` with `keepRecentTurns: 0` summarized the newest turn, i.e. the question being asked. `keepRecentTurns` is now clamped to a minimum of 1.
+
+Related: `pinSystemMessages` defaults to `'first'` (the system prompt only). Pinning *every* system message would make each rolling summary immortal, so a long conversation would accumulate summaries it could never retire.
+
+### D13: A summary is a non-pinned `system` message marked by a content prefix
+
+`Message` is `{ role, content, pinned? }` and widening it for the context manager would push a Phase 2 concern into the type every provider consumes. So a summary is marked in its content: role `system`, content starting with `[summary of earlier conversation]`. Role `system` because a summary is out-of-band context, not a turn anybody took — as an `assistant` message the model reads it as its own words. In the content because it then survives JSON storage, state updates, and providers that copy only the fields they know. **Not pinned**, which is what keeps it eligible to be folded into the next summary instead of accumulating; `analyzeConversation` explicitly pins the first *non-summary* system message so a leading summary cannot become "the system prompt" by accident.
+
+When the summarizer fails, the default is to **degrade to `slidingWindow` for that request** and report a warning, not to fail: the user asked a question, not for a summary, and the failure modes here are the transient ones D9 documents. An abort always propagates regardless. `onSummarizerError: 'throw'` is available for apps where losing old context silently is the worse outcome.
+
+### D14: The app-owned state slot is a zero-argument renderer, rendered idempotently into the system prompt
+
+`systemState: () => string | undefined`, not `(state) => string`. The state belongs to the app; a closure reaches any store without threading a generic parameter through `fitContext`. The rendered block is delimited by a `[current state]` marker and any previous block is stripped before the new one is appended, so feeding a previous result back in replaces the block instead of stacking copies. This is the pattern the plan calls "recommended for purpose-built apps" and it is documented at length in `src/core/context/system-state.ts`: state rendered fresh every turn is always current and costs the same at turn 2 and turn 200, which is strictly better than hoping it survives in history.
+
+### D15: `contextOverflow` is thrown, not returned; `fast-check` is a devDependency
+
+A pass that cannot fit the pinned messages plus the newest turn throws `LLMError` `contextOverflow` (carrying the measured `tokenCount` and the budget as `contextSize`) rather than returning a result that says "impossible". The Phase 4 router already treats `contextOverflow` as a fallback trigger, so throwing means a context-manager overflow routes exactly like a provider's own; a result object saying "impossible" is too easy to hand straight to `generate()`.
+
+`fast-check` was added as a **devDependency only** — `core` and `openai` keep zero runtime dependencies. The properties it drives (output never exceeds budget, pinned messages always survive, turns are never split, output is a subsequence of the input, unsatisfiable inputs always overflow) are the phase's acceptance criteria, and as D12 records, they found two real bugs that the hand-written edge-case tests did not.
+
 ## 2026-09-20 — Phase 0
 
 ### D1: Bespoke provider interface; AI SDK conformance deferred to an optional adapter
