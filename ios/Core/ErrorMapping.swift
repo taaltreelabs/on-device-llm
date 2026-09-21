@@ -61,6 +61,32 @@ func mapNativeError(_ error: Error) -> BridgeErrorPayload {
     return BridgeErrorPayload(code: "cancelled", message: "The request was cancelled")
   }
 
+  if let toolError = error as? LanguageModelSession.ToolCallError {
+    // Unwrap: the interesting error is the one our `BridgedTool.call` threw —
+    // a handler failure, a timeout, or a cancellation, each already carrying
+    // its taxonomy code (ios/Core/ToolBridge.swift). Mapping the wrapper
+    // instead would flatten all three into one untyped `unknown`.
+    var payload = mapNativeError(toolError.underlyingError)
+    payload.message = "Tool \"\(toolError.tool.name)\" failed: \(payload.message)"
+    return payload
+  }
+
+  if let parsingError = error as? GeneratedContent.ParsingError {
+    // The model produced output that does not parse against the schema. The
+    // raw text is the only evidence of what went wrong, and it is the first
+    // thing anybody debugging a schema asks for — so it travels with the error
+    // (docs/plan.md §4) rather than being swallowed. Transient: the next
+    // sampling of the same prompt may well parse.
+    var payload = BridgeErrorPayload(
+      code: "unknown",
+      message: "The model's structured output could not be parsed against the schema")
+    payload.transient = true
+    payload.rawContent = parsingError.rawContent
+    payload.nativeDomain = "FoundationModels.GeneratedContent.ParsingError"
+    payload.nativeDetail = parsingError.debugDescription
+    return payload
+  }
+
   if let modelError = error as? LanguageModelError {
     return map(modelError)
   }

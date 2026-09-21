@@ -55,3 +55,6 @@ yarn-error.log
 
 # Expo
 .expo/*
+
+# SwiftPM (the macOS verification harness)
+harness/.build/

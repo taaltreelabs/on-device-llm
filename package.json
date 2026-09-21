@@ -42,6 +42,7 @@
     "typecheck": "tsc --noEmit",
     "check:isolation": "node scripts/check-isolation.mjs",
     "acceptance:fm": "node scripts/fm-acceptance.mjs",
+    "harness:apple": "swift run --package-path harness Runner",
     "prepare": "node internal/module_scripts/prepare.js",
     "open:ios": "node internal/module_scripts/open-ios.js",
     "open:android": "node internal/module_scripts/open-android.js"

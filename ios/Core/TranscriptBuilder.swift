@@ -55,18 +55,35 @@ enum TranscriptBuilder {
   /// messages is preserved; their position *between* turns is not, because the
   /// transcript has no way to express it. In practice the context manager
   /// emits them at the head anyway.
-  static func prepare(_ request: BridgeRequest) throws -> PreparedRequest {
+  /// - Parameter requirePrompt: `false` relaxes the "must end with a user
+  ///   message" rule and folds every message into the transcript instead,
+  ///   leaving `prompt` empty. Used by prewarming and token counting, neither
+  ///   of which generates anything: a caller prewarming a chat screen has a
+  ///   conversation that ends wherever the user stopped typing, and refusing to
+  ///   count the tokens of a history that ends with an assistant turn would
+  ///   make the context manager's job impossible.
+  static func prepare(_ request: BridgeRequest, requirePrompt: Bool = true) throws
+    -> PreparedRequest
+  {
     let systemMessages = request.messages.filter { $0.role == .system }
-    let turnMessages = request.messages.filter { $0.role != .system }
+    var turnMessages = request.messages.filter { $0.role != .system }
+    var prompt = ""
 
-    guard let last = turnMessages.last else {
-      throw BridgeError.invalidRequest(
-        "The request contains no user message to respond to.")
-    }
-    guard last.role == .user else {
-      throw BridgeError.invalidRequest(
-        "The Apple provider requires the conversation to end with a user message; "
-          + "this one ends with an assistant message.")
+    if requirePrompt {
+      guard let last = turnMessages.last else {
+        throw BridgeError.invalidRequest(
+          "The request contains no user message to respond to.")
+      }
+      guard last.role == .user else {
+        throw BridgeError.invalidRequest(
+          "The Apple provider requires the conversation to end with a user message; "
+            + "this one ends with an assistant message.")
+      }
+      prompt = last.content
+      turnMessages.removeLast()
+    } else if let last = turnMessages.last, last.role == .user {
+      prompt = last.content
+      turnMessages.removeLast()
     }
 
     var entries: [Transcript.Entry] = []
@@ -84,7 +101,7 @@ enum TranscriptBuilder {
           )))
     }
 
-    for message in turnMessages.dropLast() {
+    for message in turnMessages {
       switch message.role {
       case .user:
         entries.append(
@@ -106,7 +123,7 @@ enum TranscriptBuilder {
 
     return PreparedRequest(
       transcript: Transcript(entries: entries),
-      prompt: last.content,
+      prompt: prompt,
       options: generationOptions(from: request.options)
     )
   }

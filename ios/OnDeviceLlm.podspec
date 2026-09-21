@@ -27,5 +27,12 @@ Pod::Spec.new do |s|
     'DEFINES_MODULE' => 'YES',
   }
 
-  s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
+  # Everything under ios/, and nothing else. The macOS verification harness
+  # (../harness) compiles ios/Core/*.swift through a symlink, so it must never
+  # be picked up here: its runner is a `main.swift` executable and an app that
+  # linked it would fail to build. The glob is already rooted at this
+  # directory, which makes that true today; the exclusion states it, so a
+  # future `s.source_files` widened to the repo root cannot break it silently.
+  s.source_files  = "**/*.{h,m,mm,swift,hpp,cpp}"
+  s.exclude_files = ["../harness/**/*", "**/.build/**/*"]
 end
