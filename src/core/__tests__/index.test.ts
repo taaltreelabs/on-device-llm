@@ -7,7 +7,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   LLMError,
+  MockProvider,
   UNKNOWN,
+  estimateTokens,
   isUnknown,
   normalizeContextWindow,
   type Availability,
@@ -26,10 +28,14 @@ import {
 import * as core from '../index';
 
 describe('core public API', () => {
-  it('exports the runtime surface the contract needs, and no default export', () => {
+  it('exports the runtime surface Phase 1 promises, and no default export', () => {
     expect(Object.keys(core).sort()).toEqual([
+      'DEFAULT_CHARS_PER_TOKEN',
+      'DEFAULT_PER_MESSAGE_OVERHEAD_TOKENS',
       'LLMError',
+      'MockProvider',
       'UNKNOWN',
+      'estimateTokens',
       'isAbortError',
       'isLLMError',
       'isUnknown',
@@ -112,7 +118,7 @@ describe('type-level contracts', () => {
       }
 
       async countTokens(messages: readonly Message[]): Promise<number> {
-        return messages.reduce((total, message) => total + message.content.length, 0);
+        return estimateTokens(messages);
       }
 
       async generate(req: GenerateRequest, options?: RequestOptions): Promise<GenerateResult> {
@@ -143,5 +149,9 @@ describe('type-level contracts', () => {
       providerId: 'echo',
     });
     await expect(provider.countTokens?.(messages)).resolves.toBeGreaterThan(0);
+
+    // A router (Phase 4) will hold providers side by side through this type.
+    const providers: LLMProvider[] = [provider, new MockProvider()];
+    expect(providers.map((candidate) => candidate.id)).toEqual(['echo', 'mock']);
   });
 });

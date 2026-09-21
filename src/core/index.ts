@@ -2,8 +2,8 @@
  * `@taaltreelabs/on-device-llm/core`
  *
  * The package's public API: message and request types, the provider
- * interface, the error taxonomy, and capability/availability reporting. The
- * token estimator and mock provider join them in Phase 1; the context
+ * interface, the error taxonomy, capability/availability reporting, a
+ * heuristic token estimator, and a scriptable mock provider. The context
  * manager (Phase 2) and router (Phase 4) land here too.
  *
  * Everything else in the package — the OpenAI-compatible provider, the Apple
@@ -53,6 +53,12 @@ export {
   type UnknownErrorDetails,
   type UnsupportedLocaleErrorDetails,
 } from './errors';
+export {
+  DEFAULT_CHARS_PER_TOKEN,
+  DEFAULT_PER_MESSAGE_OVERHEAD_TOKENS,
+  estimateTokens,
+  type EstimateTokensOptions,
+} from './estimate-tokens';
 export type {
   FinishReason,
   GenerateRequest,
@@ -61,5 +67,16 @@ export type {
   TokenUsage,
 } from './generation';
 export type { Message, MessageRole } from './messages';
+export {
+  MockProvider,
+  type MockCall,
+  type MockCountTokens,
+  type MockErrorTurn,
+  type MockProviderOptions,
+  type MockResultTurn,
+  type MockStreamChunk,
+  type MockStreamTurn,
+  type MockTurn,
+} from './mock-provider';
 export type { LLMProvider, RequestOptions } from './provider';
 export type { FinishEvent, ObjectSnapshotEvent, StreamEvent, TextDeltaEvent } from './stream';
