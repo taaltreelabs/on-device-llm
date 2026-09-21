@@ -17,12 +17,24 @@
  * 3. **Cancellation on every exit path.** `return`, `break`, `throw` in the
  *    consumer's loop, and an `AbortSignal` all end up calling native
  *    `cancel(requestId)`.
+ *
+ * It is also the JavaScript half of the tool protocol (DECISIONS.md D24): a
+ * `toolCall` event starts the request's handler *without blocking the event
+ * loop* — two tool calls can be in flight at once — and its outcome goes back
+ * through `resolveToolCall(callId, …)`. A handler that throws fails the
+ * request, with the original error kept as the `LLMError`'s cause.
  */
 
-import { LLMError, toLLMError, type GenerateResult, type StreamEvent } from '../core';
+import {
+  LLMError,
+  toLLMError,
+  type GenerateResult,
+  type StreamEvent,
+  type ToolExecutor,
+} from '../core';
 import { toLLMErrorFromNative } from './errors';
 import type { AppleNativeModule, NativeStreamEvent, NativeSubscription } from './native/types';
-import { toFinishReason, toTokenUsage } from './wire';
+import { parseObjectJson, toFinishReason, toTokenUsage } from './wire';
 
 /**
  * Unbounded FIFO with an async `next()`.
@@ -64,6 +76,26 @@ export interface StreamBridgeOptions {
   /** Kicks off the native stream. Called after the listener is attached. */
   readonly start: () => Promise<void>;
   readonly signal?: AbortSignal;
+  /** Handler per tool name, already resolved by `buildNativeRequest`. */
+  readonly toolHandlers?: ReadonlyMap<string, ToolExecutor>;
+}
+
+/** Text the model can read, from whatever a handler returned. */
+function toToolResultText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (value === undefined) return '';
+  try {
+    return JSON.stringify(value) ?? '';
+  } catch (cause) {
+    throw new Error(
+      `The tool handler returned a value that cannot be serialized to JSON: ${String(cause)}`
+    );
+  }
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
 }
 
 /**

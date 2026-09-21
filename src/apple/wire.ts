@@ -16,8 +16,10 @@ import {
   type GenerateRequest,
   type Message,
   type TokenUsage,
+  type ToolExecutor,
 } from '../core';
-import type { NativeUsage } from './native/types';
+import type { NativeToolDefinition, NativeUsage } from './native/types';
+import { encodeAppleSchema } from './schema';
 
 const FINISH_REASONS: readonly FinishReason[] = [
   'stop',
@@ -59,6 +61,24 @@ export interface NativeRequestArgs {
   readonly messages: { readonly role: string; readonly content: string }[];
   readonly temperature: number | null;
   readonly maxOutputTokens: number | null;
+  /** A normalized JSON Schema document, or `null` for a text request. */
+  readonly schemaJson: string | null;
+  readonly tools: NativeToolDefinition[];
+  readonly toolCallTimeoutMs: number | null;
+  /**
+   * The handler for each tool, by name, resolved from `tool.execute` or
+   * `options.onToolCall`. Never crosses the bridge — the stream bridge calls
+   * these when a `toolCall` event arrives.
+   */
+  readonly toolHandlers: Map<string, ToolExecutor>;
+}
+
+/** Per-call inputs that affect how a request is built. */
+export interface BuildRequestOptions {
+  /** Fallback handler for tools without their own `execute`. */
+  readonly onToolCall?: ToolExecutor;
+  /** Per-tool-call budget. Defaults to the provider's configured value. */
+  readonly toolCallTimeoutMs?: number;
 }
 
 /**
@@ -67,9 +87,13 @@ export interface NativeRequestArgs {
  * Rejections, and why each one is `invalidRequest` (never retried, never
  * failed over — it will fail the same way next time):
  *
- * - **`schema`**: structured output is Phase 3 step 6. Silently ignoring it
- *   would hand the caller free-form prose where they asked for an object,
- *   which is the failure mode docs/plan.md §4 explicitly warns against.
+ * - **an unsupported `schema` construct**: rejected by `normalizeJsonSchema`
+ *   and `encodeAppleSchema` with the keyword and its path, rather than
+ *   accepted and quietly ignored by the model (docs/plan.md §4).
+ * - **a tool with no handler**, a **duplicate tool name**, or an **unusable
+ *   parameter schema**: all discovered here, before generation starts, so the
+ *   failure is not a surprise arriving mid-stream with a tool call already in
+ *   flight.
  * - **empty `messages`**, or **no user message**: there is nothing to respond
  *   to.
  * - **a conversation not ending in a `user` message**: the framework has no
@@ -82,16 +106,9 @@ export interface NativeRequestArgs {
  */
 export function buildNativeRequest(
   request: GenerateRequest,
-  providerId: string
+  providerId: string,
+  options: BuildRequestOptions = {}
 ): NativeRequestArgs {
-  if (request.schema !== undefined) {
-    throw invalid(
-      'The Apple provider does not support structured output yet (Phase 3 step 6). ' +
-        'Remove `schema`, or route this request to a provider that supports it.',
-      providerId
-    );
-  }
-
   const messages = request.messages;
   if (messages.length === 0) {
     throw invalid('`messages` is empty; there is nothing to respond to.', providerId);
@@ -130,11 +147,86 @@ export function buildNativeRequest(
     );
   }
 
+  if (options.toolCallTimeoutMs !== undefined) {
+    if (!Number.isInteger(options.toolCallTimeoutMs) || options.toolCallTimeoutMs <= 0) {
+      throw invalid(
+        `\`toolCallTimeoutMs\` must be a positive integer, got ${options.toolCallTimeoutMs}.`,
+        providerId
+      );
+    }
+  }
+
+  const schemaJson =
+    request.schema !== undefined
+      ? encodeAppleSchema(request.schema, { providerId, label: 'schema' })
+      : null;
+
+  const tools: NativeToolDefinition[] = [];
+  const toolHandlers = new Map<string, ToolExecutor>();
+  for (const tool of request.tools ?? []) {
+    if (typeof tool.name !== 'string' || tool.name === '') {
+      throw invalid('Every tool needs a non-empty `name`.', providerId);
+    }
+    if (toolHandlers.has(tool.name)) {
+      throw invalid(
+        `Two tools are named "${tool.name}". Tool names identify the tool to the model and ` +
+          'route its call back to a handler, so they must be unique within a request.',
+        providerId
+      );
+    }
+    const execute = tool.execute ?? options.onToolCall;
+    if (execute === undefined) {
+      throw invalid(
+        `The tool "${tool.name}" has no \`execute\` handler, and no \`onToolCall\` was passed ` +
+          'in the request options. A tool the model can call but nothing can run would fail ' +
+          'mid-generation, so the request is rejected now.',
+        providerId
+      );
+    }
+    toolHandlers.set(tool.name, execute);
+    tools.push({
+      name: tool.name,
+      description: tool.description ?? '',
+      parametersJson: encodeAppleSchema(tool.parameters, {
+        providerId,
+        label: `the parameters for tool "${tool.name}"`,
+        rootName: `${tool.name}Arguments`,
+      }),
+    });
+  }
+
   return {
     messages: messages.map((message) => ({ role: message.role, content: message.content })),
     temperature: request.temperature ?? null,
     maxOutputTokens: request.maxOutputTokens ?? null,
+    schemaJson,
+    tools,
+    toolCallTimeoutMs: options.toolCallTimeoutMs ?? null,
+    toolHandlers,
   };
+}
+
+/**
+ * Parse structured output that arrived as JSON text.
+ *
+ * A failure here means the framework handed us its own `jsonString` and it did
+ * not parse, which should be impossible — so it is reported as `unknown` with
+ * the raw text attached rather than silently dropping `object` from a result
+ * the caller asked for.
+ */
+export function parseObjectJson(json: string, providerId: string): unknown {
+  try {
+    return JSON.parse(json) as unknown;
+  } catch (cause) {
+    throw new LLMError(
+      { code: 'unknown', transient: true },
+      {
+        message: 'The model returned structured output that is not valid JSON.',
+        providerId,
+        cause: { rawContent: json, parseError: cause },
+      }
+    );
+  }
 }
 
 let requestCounter = 0;

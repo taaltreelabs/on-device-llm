@@ -15,6 +15,7 @@ import type { Capabilities } from './capabilities';
 import type { GenerateRequest, GenerateResult } from './generation';
 import type { Message } from './messages';
 import type { StreamEvent } from './stream';
+import type { ToolExecutor } from './tools';
 
 /** Per-call options common to `generate` and `stream`. */
 export interface RequestOptions {
@@ -25,6 +26,16 @@ export interface RequestOptions {
    * signal was already aborted at call time or fires mid-flight.
    */
   readonly signal?: AbortSignal;
+  /**
+   * Fallback handler for tool calls, used for any tool in
+   * `GenerateRequest.tools` that has no `execute` of its own.
+   *
+   * Provided for the app that routes every tool through one dispatcher (a
+   * `switch` on `toolName`, a generated client). Per-tool `execute` wins when
+   * both are present, and a tool with neither makes the request
+   * `invalidRequest` before generation starts.
+   */
+  readonly onToolCall?: ToolExecutor;
 }
 
 /**
@@ -89,6 +100,22 @@ export interface LLMProvider {
    * caller can fall back to `estimateTokens` and knows to widen its margin.
    */
   countTokens?(messages: readonly Message[]): Promise<number>;
+
+  /**
+   * Ask the provider to get ready for a request that is coming.
+   *
+   * A **hint, not a contract**: it resolves `true` when the hint was delivered
+   * and `false` when there was nothing to prewarm (wrong platform, no such
+   * facility), and neither answer says anything about how fast the next
+   * request will be. Never throws, and never required — a caller that skips it
+   * gets identical results, only later.
+   *
+   * `messages` is the conversation so far, if known, so a provider can warm a
+   * prompt prefix as well as its model. Unlike `generate`, it does not have to
+   * end with a user message: the case this is for is a screen that has opened
+   * and a user who has not finished typing.
+   */
+  prewarm?(messages?: readonly Message[]): Promise<boolean>;
 
   /** Produce one complete response. Rejects with an `LLMError` on any failure. */
   generate(request: GenerateRequest, options?: RequestOptions): Promise<GenerateResult>;

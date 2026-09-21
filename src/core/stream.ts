@@ -60,13 +60,36 @@ export interface FinishEvent {
 }
 
 /**
+ * The model asked for a tool to be run.
+ *
+ * Reported for observability only: by the time a consumer sees this the
+ * provider has already handed the call to the request's handler
+ * (`ToolDefinition.execute`), and generation continues when the handler
+ * answers. Nothing is expected of the consumer — a UI can show "looking up the
+ * weather…", and a consumer that ignores this event misses nothing but the
+ * status line.
+ *
+ * There is deliberately no matching `toolResult` event. The handler *is* the
+ * caller's code; it already knows what it returned, and an event echoing it
+ * back would be a second copy of the same information to keep consistent.
+ */
+export interface ToolCallEvent {
+  readonly type: 'toolCall';
+  /** Unique per call; two calls to the same tool have different ids. */
+  readonly callId: string;
+  readonly toolName: string;
+  /** Arguments as the model produced them, parsed. */
+  readonly arguments: unknown;
+}
+
+/**
  * One event from `LLMProvider.stream()`.
  *
  * Discriminated on `type`. Consumers should ignore event types they do not
- * recognise (a `default: break`) rather than throwing — Phase 3 adds tool
- * events here, and a UI that renders text should not break when a provider
- * starts reporting tool activity. Tool events are intentionally not
- * declared yet: unlike `FinishReason.toolCalls`, a new *event type* can be
- * added without breaking the callers that follow this rule.
+ * recognise (a `default: break`) rather than throwing — `toolCall` arrived in
+ * Phase 3 exactly this way, and a UI that renders text did not break when
+ * providers started reporting tool activity. Adding an event type stays a
+ * non-breaking change for callers that follow this rule, which is why
+ * `FinishReason.toolCalls` had to be declared up front and this union did not.
  */
-export type StreamEvent = TextDeltaEvent | ObjectSnapshotEvent | FinishEvent;
+export type StreamEvent = TextDeltaEvent | ObjectSnapshotEvent | ToolCallEvent | FinishEvent;

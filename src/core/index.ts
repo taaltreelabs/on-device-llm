@@ -128,6 +128,26 @@ export type {
 } from './generation';
 export type { Message, MessageRole } from './messages';
 export {
+  DROPPED_ANNOTATIONS,
+  normalizeJsonSchema,
+  type ArrayNode,
+  type BooleanNode,
+  type DroppedKeyword,
+  type NormalizeSchemaOptions,
+  type NormalizedSchema,
+  type NumberNode,
+  type ObjectNode,
+  type SchemaNode,
+  type SchemaProperty,
+  type StringNode,
+} from './schema';
+export {
+  resolveToolHandlers,
+  type ToolCall,
+  type ToolDefinition,
+  type ToolExecutor,
+} from './tools';
+export {
   MockProvider,
   type MockCall,
   type MockCountTokens,
@@ -139,4 +159,10 @@ export {
   type MockTurn,
 } from './mock-provider';
 export type { LLMProvider, RequestOptions } from './provider';
-export type { FinishEvent, ObjectSnapshotEvent, StreamEvent, TextDeltaEvent } from './stream';
+export type {
+  FinishEvent,
+  ObjectSnapshotEvent,
+  StreamEvent,
+  TextDeltaEvent,
+  ToolCallEvent,
+} from './stream';

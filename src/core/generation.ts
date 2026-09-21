@@ -8,6 +8,7 @@
  */
 
 import type { Message } from './messages';
+import type { ToolDefinition } from './tools';
 
 /**
  * A JSON Schema document describing the shape of structured output.
@@ -111,8 +112,8 @@ export interface TokenUsage {
 /**
  * Everything needed to produce one response.
  *
- * FORWARD-COMPAT SEAM: Phase 3 adds an optional `tools` field (and Phase 3+
- * may add `toolChoice`). Sampling knobs beyond the two below —
+ * FORWARD-COMPAT SEAM: Phase 3 added the optional `tools` field below (and a
+ * later phase may add `toolChoice`). Sampling knobs beyond the two below —
  * `topP`/`topK`/`seed`, all expressible against Apple's `SamplingMode`
  * (docs/research/sdk-surface.md §4) — land as sibling optional fields. Both
  * are additive: a request built today stays valid, and a provider written
@@ -133,6 +134,15 @@ export interface GenerateRequest {
    * returning prose.
    */
   readonly schema?: JsonSchema;
+  /**
+   * Tools the model may call while answering, each with the handler that runs
+   * it (see {@link ToolDefinition}). Providers that report
+   * `capabilities().tools === false` must reject a request carrying tools as
+   * `invalidRequest` rather than answering without them — a model that was
+   * supposed to look something up and instead guessed is the worst of the
+   * available outcomes.
+   */
+  readonly tools?: readonly ToolDefinition[];
   /**
    * Sampling temperature. Range is provider-defined (Apple takes a
    * `Double`, OpenAI-compatible endpoints take 0–2). Omit to use the
