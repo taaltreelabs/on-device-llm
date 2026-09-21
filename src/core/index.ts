@@ -1,24 +1,65 @@
 /**
  * `@taaltreelabs/on-device-llm/core`
  *
- * Platform-agnostic types, provider interface, error taxonomy, context
- * manager, router, and a scriptable mock provider (Phase 1+, see
- * docs/plan.md §2 and §5).
+ * The package's public API: message and request types, the provider
+ * interface, the error taxonomy, and capability/availability reporting. The
+ * token estimator and mock provider join them in Phase 1; the context
+ * manager (Phase 2) and router (Phase 4) land here too.
+ *
+ * Everything else in the package — the OpenAI-compatible provider, the Apple
+ * native provider, the React hooks — conforms to what is defined here, and
+ * third parties can write their own providers against it without living in
+ * this repo (docs/plan.md §2).
  *
  * ISOLATION RULE (docs/plan.md §2, DECISIONS.md D1-D9): this module and
  * everything it imports must run under plain Node with no React, React
- * Native, Expo, or native module anywhere in the import graph. Do not
- * import from `../apple` or `../react`, and do not import `react`,
- * `react-native`, or any `expo`/`expo-*` package here. This is enforced by
- * the ESLint isolation rule (eslint.config.cjs) and by
- * `scripts/check-isolation.mjs` (`npm run check:isolation`) against the
- * built output.
+ * Native, Expo, or native module anywhere in the import graph, and with zero
+ * runtime dependencies. Do not import from `../apple` or `../react`, and do
+ * not import `react`, `react-native`, or any `expo`/`expo-*` package here.
+ * Enforced by the ESLint isolation rule (eslint.config.cjs) and by
+ * `scripts/check-isolation.mjs` (`npm run check:isolation`) against the built
+ * output.
  *
- * Nothing here yet — this is a Phase 0 scaffold placeholder.
+ * No default exports anywhere: every symbol is named, so re-export from the
+ * package root stays mechanical and `import * as` stays readable.
  */
 
-/** Marks this module as present; replaced by real exports in Phase 1. */
-export const CORE_PLACEHOLDER = true;
-
-/** Placeholder for the future provider identifier union (Phase 1). */
-export type ProviderId = 'core-placeholder';
+export type { Availability, UnavailableReason } from './availability';
+export {
+  UNKNOWN,
+  isUnknown,
+  normalizeContextWindow,
+  type Capabilities,
+  type TokenCounting,
+  type UnknownValue,
+} from './capabilities';
+export {
+  LLMError,
+  isAbortError,
+  isLLMError,
+  toLLMError,
+  type CancelledErrorDetails,
+  type ContextOverflowErrorDetails,
+  type GuardrailErrorDetails,
+  type InvalidRequestErrorDetails,
+  type LLMErrorCode,
+  type LLMErrorDetails,
+  type LLMErrorDetailsFor,
+  type LLMErrorOf,
+  type LLMErrorOptions,
+  type NetworkErrorDetails,
+  type RateLimitedErrorDetails,
+  type UnavailableErrorDetails,
+  type UnknownErrorDetails,
+  type UnsupportedLocaleErrorDetails,
+} from './errors';
+export type {
+  FinishReason,
+  GenerateRequest,
+  GenerateResult,
+  JsonSchema,
+  TokenUsage,
+} from './generation';
+export type { Message, MessageRole } from './messages';
+export type { LLMProvider, RequestOptions } from './provider';
+export type { FinishEvent, ObjectSnapshotEvent, StreamEvent, TextDeltaEvent } from './stream';
