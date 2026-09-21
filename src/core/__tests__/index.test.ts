@@ -28,18 +28,35 @@ import {
 import * as core from '../index';
 
 describe('core public API', () => {
-  it('exports the runtime surface Phase 1 promises, and no default export', () => {
+  it('exports the runtime surface Phase 1 plus the Phase 2 foundations promise, and no default export', () => {
     expect(Object.keys(core).sort()).toEqual([
       'DEFAULT_CHARS_PER_TOKEN',
+      'DEFAULT_MAX_SUMMARY_TOKENS',
       'DEFAULT_PER_MESSAGE_OVERHEAD_TOKENS',
+      'DEFAULT_RESERVED_FOR_OUTPUT_TOKENS',
+      'DEFAULT_SAFETY_MARGIN_ESTIMATED_TOKENS',
+      'DEFAULT_SAFETY_MARGIN_EXACT_TOKENS',
+      'DEFAULT_SUMMARY_MARKER',
+      'DEFAULT_SYSTEM_STATE_MARKER',
       'LLMError',
       'MockProvider',
       'UNKNOWN',
+      'analyzeConversation',
+      'applySystemState',
+      'computeContextBudget',
+      'createMeasure',
+      'createSummaryMessage',
+      'defaultSummaryPrompt',
       'estimateTokens',
       'isAbortError',
+      'isBoundedBudget',
       'isLLMError',
+      'isSummaryMessage',
       'isUnknown',
+      'measureMessages',
       'normalizeContextWindow',
+      'stripSystemState',
+      'summaryText',
       'toLLMError',
     ]);
     expect('default' in core).toBe(false);
