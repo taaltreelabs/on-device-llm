@@ -109,6 +109,16 @@ export interface AnalyzeConversationOptions {
  * - **R6 — the last turn may be user-only.** That is the normal shape of a
  *   request awaiting a reply, and `slidingWindow` never drops the newest
  *   turn.
+ * - **R7 — an assistant-only turn re-joins the turn it continues.** When a
+ *   non-pinned `system` message lands between two parts of an answer
+ *   (`[user, assistant, system, assistant]`), R5 gives the system message its
+ *   own turn, which would leave the trailing `assistant` stranded in a turn
+ *   with no user — droppable separately from its prompt, i.e. an orphan
+ *   waiting to happen. So after grouping, any turn that has assistant
+ *   messages but no user message is merged into the nearest earlier turn
+ *   that is not a system block. A leading assistant run with no earlier turn
+ *   to join stays a prologue turn (R4). Found by a fast-check property
+ *   (seed 1367200082) during Phase 3, not by the hand-written edge cases.
  *
  * Because turns are dropped whole and oldest-first, an `assistant` message can
  * only ever be kept alongside the `user` message(s) that prompted it. That is
@@ -192,5 +202,32 @@ export function analyzeConversation(
   }
   flush();
 
-  return { pinnedIndices, turns };
+  // R7: merge any assistant-only turn back into the turn it continues, so a
+  // system message that interrupted a multi-part answer cannot leave the
+  // trailing part droppable separately from its prompt.
+  const merged: ConversationTurn[] = [];
+  for (const turn of turns) {
+    if (turn.hasAssistant && !turn.hasUser && !turn.isSystemBlock) {
+      let target = -1;
+      for (let i = merged.length - 1; i >= 0; i -= 1) {
+        if (!merged[i].isSystemBlock) {
+          target = i;
+          break;
+        }
+      }
+      if (target !== -1) {
+        const host = merged[target];
+        merged[target] = {
+          indices: [...host.indices, ...turn.indices],
+          hasUser: host.hasUser,
+          hasAssistant: true,
+          isSystemBlock: false,
+        };
+        continue;
+      }
+    }
+    merged.push(turn);
+  }
+
+  return { pinnedIndices, turns: merged };
 }

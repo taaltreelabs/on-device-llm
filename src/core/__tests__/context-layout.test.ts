@@ -109,6 +109,27 @@ describe('turn pairing', () => {
     });
   });
 
+  it('merges an assistant continuation split off by a system message back into its turn (R7)', () => {
+    // fast-check counterexample (seed 1367200082), found during Phase 3: a
+    // system message between two parts of an answer used to leave the second
+    // part in an assistant-only turn, droppable separately from its prompt.
+    expect(shape(conv('s:prompt', 'u:q', 'a:part one', 's:note', 'a:part two'))).toEqual({
+      pinned: ['prompt'],
+      turns: [['q', 'part one', 'part two'], ['note']],
+    });
+  });
+
+  it('keeps a leading assistant run as a prologue even when a system block precedes it (R7)', () => {
+    // No earlier turn with a prompt exists, so there is nothing to merge
+    // into: the greeting stays its own droppable turn, per R4.
+    const layout = analyzeConversation(conv('s:prompt', 's:note', 'a:greeting', 'u:q'));
+    expect(layout.turns.map((t) => ({ user: t.hasUser, sys: t.isSystemBlock }))).toEqual([
+      { user: false, sys: true },
+      { user: false, sys: false },
+      { user: true, sys: false },
+    ]);
+  });
+
   it('does not let a pinned message mid-history split the turn around it', () => {
     const messages = conv('u:q', '!s:standing rule', 'a:r');
     expect(shape(messages)).toEqual({ pinned: ['standing rule'], turns: [['q', 'r']] });
