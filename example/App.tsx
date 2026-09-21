@@ -257,7 +257,7 @@ export default function App() {
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}>
+        keyboardVerticalOffset={0}>
         <StatusLine providerId={provider.id} availability={availability} />
 
         <ProviderToggle active={providerKind} disabled={isGenerating} onChange={changeProvider} />
@@ -366,6 +366,10 @@ function AvailabilityPanel(props: {
   readonly onRefresh: () => void;
 }) {
   const { availability, capabilities } = props;
+  // Collapsed by default: the full capabilities JSON is taller than a phone
+  // screen and starves the message list and input row of space. The one-line
+  // summary in StatusLine stays visible either way.
+  const [expanded, setExpanded] = useState(false);
   return (
     <View style={styles.panel}>
       <View style={styles.panelHeader}>
@@ -373,19 +377,26 @@ function AvailabilityPanel(props: {
         {props.loading ? (
           <ActivityIndicator size="small" />
         ) : (
-          <Button title="Refresh" onPress={props.onRefresh} />
+          <>
+            <Button title={expanded ? 'Hide' : 'Show'} onPress={() => setExpanded(!expanded)} />
+            <Button title="Refresh" onPress={props.onRefresh} />
+          </>
         )}
       </View>
-      <Text style={styles.panelJson}>
-        {availability.status === 'ready'
-          ? JSON.stringify(availability.value, null, 2)
-          : 'not yet checked'}
-      </Text>
-      <Text style={styles.panelJson}>
-        {capabilities.status === 'ready'
-          ? JSON.stringify(capabilities.value, null, 2)
-          : 'not yet checked'}
-      </Text>
+      {expanded ? (
+        <ScrollView style={styles.panelBody} nestedScrollEnabled>
+          <Text style={styles.panelJson}>
+            {availability.status === 'ready'
+              ? JSON.stringify(availability.value, null, 2)
+              : 'not yet checked'}
+          </Text>
+          <Text style={styles.panelJson}>
+            {capabilities.status === 'ready'
+              ? JSON.stringify(capabilities.value, null, 2)
+              : 'not yet checked'}
+          </Text>
+        </ScrollView>
+      ) : null}
     </View>
   );
 }
@@ -446,6 +457,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
+  },
+  panelBody: {
+    maxHeight: 220,
   },
   panelTitle: { color: '#e5e7eb', fontWeight: '600', fontSize: 13 },
   panelJson: {
