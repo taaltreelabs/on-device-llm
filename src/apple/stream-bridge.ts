@@ -125,6 +125,20 @@ export async function* bridgeNativeStream(
   const queue = new EventQueue();
   let terminated = false;
 
+  /**
+   * Aborts when this request ends, however it ends. Handed to every tool
+   * handler so long-running work (a fetch, a query) can stop when the answer
+   * is no longer wanted — a reply arriving after this is discarded natively.
+   */
+  const toolScope = new AbortController();
+  /**
+   * The first handler error, kept so the request's failure can carry it as
+   * `cause`. Native tells us *that* a tool failed; only this side still has the
+   * original `Error`, and losing it would leave the developer with our
+   * paraphrase of their own exception.
+   */
+  let toolFailure: { readonly toolName: string; readonly callId: string; readonly error: unknown } | undefined;
+
   const subscription: NativeSubscription = native.addListener(
     'onStreamEvent',
     (event: NativeStreamEvent) => {
@@ -133,6 +147,55 @@ export async function* bridgeNativeStream(
       queue.push(event);
     }
   );
+
+  /**
+   * Run one tool call and reply to native.
+   *
+   * Not awaited by the event loop below, on purpose: the model can have two
+   * calls outstanding, and awaiting the first here would serialise them (and
+   * stall the stream's own events behind app code). Every path ends in exactly
+   * one `resolveToolCall`, and a `false` from it means the call had already
+   * timed out or been cancelled — normal, and ignored.
+   */
+  const runToolCall = (call: {
+    callId: string;
+    toolName: string;
+    args: unknown;
+  }): void => {
+    const reply = (resultJson: string | null, errorMessage: string | null): void => {
+      const resolveToolCall = native.resolveToolCall?.bind(native);
+      if (resolveToolCall === undefined) return;
+      void resolveToolCall(call.callId, resultJson, errorMessage).catch(() => {
+        // The native side may already have abandoned this call, or the module
+        // may be torn down. Either way the request's own error path reports it.
+      });
+    };
+
+    const handler = options.toolHandlers?.get(call.toolName);
+    if (handler === undefined) {
+      // `buildNativeRequest` makes this unreachable for tools we declared, so
+      // this is the model inventing a tool name, or a stale native module.
+      const error = new Error(`No handler is registered for the tool "${call.toolName}".`);
+      toolFailure ??= { toolName: call.toolName, callId: call.callId, error };
+      reply(null, error.message);
+      return;
+    }
+
+    void (async () => {
+      try {
+        const result = await handler({
+          callId: call.callId,
+          toolName: call.toolName,
+          arguments: call.args,
+          signal: toolScope.signal,
+        });
+        reply(toToolResultText(result), null);
+      } catch (error) {
+        toolFailure ??= { toolName: call.toolName, callId: call.callId, error };
+        reply(null, describeError(error));
+      }
+    })();
+  };
 
   const cancelNative = (): void => {
     native.cancel(requestId).catch(() => {
@@ -166,30 +229,83 @@ export async function* bridgeNativeStream(
             yield { type: 'textDelta', delta: event.delta };
           }
           break;
+        case 'objectSnapshot': {
+          // A partial snapshot is often not parseable yet (a half-written
+          // string, a missing brace). That is expected, not an error: skip it
+          // and let the next one through. The `finish` event carries the
+          // authoritative, complete object.
+          let snapshot: unknown;
+          try {
+            snapshot = JSON.parse(event.snapshotJson) as unknown;
+          } catch {
+            break;
+          }
+          yield { type: 'objectSnapshot', snapshot };
+          break;
+        }
+        case 'toolCall': {
+          let args: unknown;
+          try {
+            args = JSON.parse(event.argumentsJson) as unknown;
+          } catch {
+            // The framework's own serialisation should always parse; if it does
+            // not, the handler still gets the text so it can decide.
+            args = event.argumentsJson;
+          }
+          runToolCall({ callId: event.callId, toolName: event.toolName, args });
+          yield {
+            type: 'toolCall',
+            callId: event.callId,
+            toolName: event.toolName,
+            arguments: args,
+          };
+          break;
+        }
         case 'finish': {
           terminated = true;
+          const usage = toTokenUsage(event.result.usage);
           const result: GenerateResult = {
             // Authoritative: the last native snapshot, not the concatenation
             // of the deltas above. They are equal unless the D18 fallback
             // fired (see ios/Core/SnapshotDiffer.swift).
             text: event.result.text,
-            finishReason: toFinishReason(event.result.finishReason),
-            ...(toTokenUsage(event.result.usage) !== undefined
-              ? { usage: toTokenUsage(event.result.usage)! }
+            ...(event.result.objectJson !== undefined
+              ? { object: parseObjectJson(event.result.objectJson, providerId) }
               : {}),
+            finishReason: toFinishReason(event.result.finishReason),
+            ...(usage !== undefined ? { usage } : {}),
             providerId,
           };
           yield { type: 'finish', result };
           return;
         }
-        case 'error':
+        case 'error': {
           terminated = true;
-          throw toLLMErrorFromNative(event.error, providerId);
+          const error = toLLMErrorFromNative(event.error, providerId);
+          if (toolFailure !== undefined) {
+            // The request failed because a tool handler did. Re-raise with the
+            // handler's own error as `cause`, keeping the native diagnostics
+            // alongside it: the app's stack trace is the useful half.
+            throw new LLMError(error.details, {
+              message: error.message,
+              providerId,
+              cause: {
+                toolName: toolFailure.toolName,
+                callId: toolFailure.callId,
+                handlerError: toolFailure.error,
+                native: error.cause,
+              },
+            });
+          }
+          throw error;
+        }
       }
     }
   } finally {
     subscription.remove();
     signal?.removeEventListener('abort', onAbort);
+    // Tell any handler still running that nobody is waiting for it.
+    toolScope.abort();
     if (!terminated) {
       // We are leaving without a terminal event: the consumer broke out of
       // its loop, threw, or was aborted. `finally` is the only place that

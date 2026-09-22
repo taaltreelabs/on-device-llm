@@ -13,23 +13,30 @@
  * and a failure to resolve is reported as `unavailable` with reason
  * `unsupportedPlatform`.
  *
- * Phase 3 steps 1-3: availability + capabilities + locales, `generate`, and
- * `stream` with working cancellation. Prewarming, token counting, structured
- * output and tool calling are steps 4-7.
+ * Phase 3 steps 1-7: availability + capabilities + locales, `generate` and
+ * `stream` with working cancellation, prewarming, exact token counting,
+ * structured output, and tool calling.
  */
 
 import { AppleProvider, type AppleProviderConfig } from './provider';
 import type { LLMProvider } from '../core';
 
-export { AppleProvider, type AppleProviderConfig } from './provider';
+export {
+  AppleProvider,
+  DEFAULT_TOOL_CALL_TIMEOUT_MS,
+  type AppleProviderConfig,
+} from './provider';
+export { encodeAppleSchema } from './schema';
 export type {
   AppleNativeModule,
   NativeAvailability,
   NativeCapabilities,
+  NativeCountTokensOutcome,
   NativeErrorPayload,
   NativeGenerateOutcome,
   NativeResult,
   NativeStreamEvent,
+  NativeToolDefinition,
   NativeUsage,
 } from './native/types';
 

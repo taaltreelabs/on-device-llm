@@ -159,6 +159,7 @@ export class OpenAIProvider implements LLMProvider {
 
   async generate(request: GenerateRequest, options?: RequestOptions): Promise<GenerateResult> {
     const signal = options?.signal;
+    this.rejectTools(request);
     this.throwIfAborted(signal);
 
     const body = this.buildRequestBody(request, false);
@@ -195,6 +196,7 @@ export class OpenAIProvider implements LLMProvider {
     options?: RequestOptions
   ): AsyncGenerator<StreamEvent, void, undefined> {
     const signal = options?.signal;
+    this.rejectTools(request);
     this.throwIfAborted(signal);
 
     const body = this.buildRequestBody(request, true);
@@ -369,6 +371,30 @@ export class OpenAIProvider implements LLMProvider {
     if (signal?.aborted === true) {
       throw new LLMError({ code: 'cancelled' }, { providerId: this.id, cause: signal.reason });
     }
+  }
+
+  /**
+   * This provider reports `capabilities().tools === false`, so a request
+   * carrying tools is rejected rather than answered without them.
+   *
+   * Chat Completions *does* have a tool protocol; what this provider has no way
+   * to do is run the handler and resume, because that needs a second round trip
+   * with `tool` messages the `core` `Message` type cannot yet express (see
+   * `MessageRole`'s forward-compat note). Answering anyway would let a model
+   * that was told to look something up invent it instead, which is the one
+   * outcome worse than an error.
+   */
+  private rejectTools(request: GenerateRequest): void {
+    if (request.tools === undefined || request.tools.length === 0) return;
+    throw new LLMError(
+      { code: 'invalidRequest' },
+      {
+        providerId: this.id,
+        message:
+          'This provider does not support tool calling (`capabilities().tools` is false). ' +
+          'Remove `tools`, or route the request to a provider that reports `tools: true`.',
+      }
+    );
   }
 
   // ---- response mapping ---------------------------------------------------

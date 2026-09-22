@@ -2,12 +2,12 @@
  * `AppleProvider` — an `LLMProvider` backed by the Swift module wrapping
  * Apple's FoundationModels framework (docs/plan.md §5, Phase 3).
  *
- * Steps 1-3 only: availability with reason codes, capabilities and locales;
- * `generate` with instructions and sampling options, a session built from the
- * messages per request; `stream` converted to deltas with cancellation that
- * really stops native generation. Prewarming, token counting, structured
- * output and tool calling (steps 4-7) come after the maintainer checkpoint;
- * `capabilities()` reports them as absent rather than as broken.
+ * All of Phase 3 steps 1-7: availability with reason codes, capabilities and
+ * locales; `generate` and `stream` (deltas, with cancellation that really stops
+ * native generation) from a session built per request; prewarming; exact token
+ * counting; structured output from a normalized JSON Schema; and tool calling,
+ * where a native tool call suspends on a continuation while the request's
+ * handler runs in JavaScript (DECISIONS.md D23-D26).
  */
 
 import {
@@ -20,15 +20,26 @@ import {
   type GenerateRequest,
   type GenerateResult,
   type LLMProvider,
+  type Message,
   type RequestOptions,
   type StreamEvent,
+  type ToolExecutor,
   type UnknownValue,
 } from '../core';
 import { toLLMErrorFromNative, toUnavailableReason } from './errors';
 import { resolveNativeModule } from './native/resolve';
 import type { AppleNativeModule } from './native/types';
 import { bridgeNativeStream } from './stream-bridge';
-import { buildNativeRequest, nextRequestId, toFinishReason, toTokenUsage } from './wire';
+import {
+  buildNativeRequest,
+  nextRequestId,
+  parseObjectJson,
+  toFinishReason,
+  toTokenUsage,
+} from './wire';
+
+/** Default per-tool-call budget. See {@link AppleProviderConfig.toolCallTimeoutMs}. */
+export const DEFAULT_TOOL_CALL_TIMEOUT_MS = 30_000;
 
 /** How the native module is obtained. Swapped in tests; not part of the public API. */
 export type NativeResolver = () => AppleNativeModule | undefined;
@@ -51,6 +62,17 @@ export interface AppleProviderConfig {
    * system prompt breaks that (docs/plan.md §2).
    */
   readonly locale?: string;
+  /**
+   * How long a tool call may wait for its handler before the request fails,
+   * in milliseconds. Defaults to {@link DEFAULT_TOOL_CALL_TIMEOUT_MS}.
+   *
+   * There is a timeout at all because the alternative — which every bridge we
+   * surveyed ships (DECISIONS.md D2) — is a handler that forgets to answer
+   * pinning the neural engine for the life of the process, with no error and
+   * nothing in the log. Timing out fails the request as `unknown`/transient
+   * (D25), which a router can retry.
+   */
+  readonly toolCallTimeoutMs?: number;
 }
 
 const PLATFORM_DETAIL =
@@ -150,12 +172,16 @@ export class AppleProvider implements LLMProvider {
   /**
    * What this provider can do *today*, not what the model can do.
    *
-   * `structuredOutput`, `tools` and `tokenCounting` are reported as absent
-   * because the bridge has not implemented steps 5-7 yet, even though
-   * `LanguageModelCapabilities` reports `guidedGeneration` and `toolCalling`
-   * as `true` on this hardware. Advertising a capability the bridge cannot
-   * honour would make the Phase 4 router route *toward* a provider that is
-   * about to fail.
+   * Every flag is answered from the model's own `LanguageModelCapabilities`
+   * where it has an opinion, and from what the bridge implements otherwise:
+   * `structuredOutput` follows `guidedGeneration`, `tools` follows
+   * `toolCalling` *and* the presence of `resolveToolCall` on the native module
+   * (a JS half newer than the native half must not advertise a protocol the
+   * native side cannot speak), and `tokenCounting` is `'exact'` when
+   * `countTokens` is there — `SystemLanguageModel.tokenCount(for:)` is the
+   * model's own tokenizer, not an estimate. Advertising a capability the bridge
+   * cannot honour would make the Phase 4 router route *toward* a provider that
+   * is about to fail.
    */
   async capabilities(): Promise<Capabilities> {
     const unavailable: Capabilities = {
@@ -192,15 +218,11 @@ export class AppleProvider implements LLMProvider {
     return {
       contextWindow,
       streaming: true,
-      // Phase 3 step 6.
-      structuredOutput: false,
-      // Phase 3 step 7.
-      tools: false,
-      // Phase 3 step 5. `SystemLanguageModel.tokenCount(for:)` exists and is
-      // exact (docs/research/sdk-surface.md §1); until it is wired, `'none'`
-      // is the honest answer and makes the context manager use the wider
-      // estimate margin (D10).
-      tokenCounting: 'none',
+      structuredOutput: nativeCapabilities.supportsGuidedGeneration !== false,
+      tools:
+        nativeCapabilities.supportsToolCalling !== false &&
+        typeof native.resolveToolCall === 'function',
+      tokenCounting: typeof native.countTokens === 'function' ? 'exact' : 'none',
       locales: locales !== undefined && locales.length > 0 ? locales : UNKNOWN,
       ...(nativeCapabilities.modelLabel !== undefined
         ? { modelLabel: nativeCapabilities.modelLabel }
@@ -219,12 +241,88 @@ export class AppleProvider implements LLMProvider {
     }
   }
 
+  /**
+   * Hint that a request is coming. Never throws; resolves `false` when the hint
+   * could not be delivered (no native module, or the framework declined).
+   *
+   * Explicitly **not** a performance contract (docs/plan.md §5 step 4):
+   * `prewarm(promptPrefix:)` returns immediately and reports nothing, and
+   * Apple's guidance is to call it only when a second or more will pass before
+   * the request. Treat it as free and optional — the harness verifies that
+   * prewarming then generating works, and deliberately asserts nothing about
+   * how long either took.
+   */
+  async prewarm(messages?: readonly Message[]): Promise<boolean> {
+    const native = this.resolveNative();
+    if (native?.prewarm === undefined) return false;
+    try {
+      return await native.prewarm(
+        messages !== undefined
+          ? messages.map((message) => ({ role: message.role, content: message.content }))
+          : null
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Exact token count for these messages, from the model's own tokenizer.
+   *
+   * Throws rather than falling back to an estimate. That is the contract
+   * `LLMProvider.countTokens` asks for and it matters: `createMeasure` catches
+   * the throw, estimates instead, and records
+   * `source: 'estimatorAfterCounterFailure'`, which widens the context
+   * manager's safety margin from 64 tokens to 256 (D10). A silent estimate here
+   * would report an exact-looking number and keep the narrow margin — which is
+   * how a "measured" budget overflows. `ModelManagerError 1013` from these
+   * overloads is not hypothetical (D9).
+   */
+  async countTokens(messages: readonly Message[]): Promise<number> {
+    const native = this.requireNative();
+    if (native.countTokens === undefined) {
+      throw new LLMError(
+        { code: 'unknown', transient: false },
+        {
+          message:
+            'This build of the native module does not implement token counting. ' +
+            '`capabilities().tokenCounting` reports `none`, so callers should estimate.',
+          providerId: this.id,
+        }
+      );
+    }
+    const outcome = await native.countTokens(
+      messages.map((message) => ({ role: message.role, content: message.content }))
+    );
+    if (!outcome.ok) throw toLLMErrorFromNative(outcome.error, this.id);
+    if (!Number.isFinite(outcome.count) || outcome.count < 0) {
+      throw new LLMError(
+        { code: 'unknown', transient: true },
+        {
+          message: `The native token count was not a usable number (${outcome.count}).`,
+          providerId: this.id,
+        }
+      );
+    }
+    return outcome.count;
+  }
+
   async generate(request: GenerateRequest, options?: RequestOptions): Promise<GenerateResult> {
+    // Tool calling needs an event channel to reach the handler mid-generation,
+    // and `native.generate` is one promise with no channel. Rather than build a
+    // second tool protocol for the non-streaming path, a request carrying tools
+    // runs on the streaming path and the events are collapsed into a result
+    // here (DECISIONS.md D24) — the `finish` event already carries exactly the
+    // `GenerateResult` this method returns.
+    if (request.tools !== undefined && request.tools.length > 0) {
+      return this.generateViaStream(request, options);
+    }
+
     const native = this.requireNative();
     const signal = options?.signal;
     this.throwIfAborted(signal);
 
-    const args = buildNativeRequest(request, this.id);
+    const args = buildNativeRequest(request, this.id, this.buildOptions(options));
     const requestId = nextRequestId();
 
     const onAbort = (): void => {
@@ -239,7 +337,8 @@ export class AppleProvider implements LLMProvider {
         requestId,
         args.messages,
         args.temperature,
-        args.maxOutputTokens
+        args.maxOutputTokens,
+        args.schemaJson
       );
       if (!outcome.ok) throw toLLMErrorFromNative(outcome.error, this.id);
       // The abort may have lost the race: native can finish normally between
@@ -252,6 +351,9 @@ export class AppleProvider implements LLMProvider {
       const usage = toTokenUsage(outcome.result.usage);
       return {
         text: outcome.result.text,
+        ...(outcome.result.objectJson !== undefined
+          ? { object: parseObjectJson(outcome.result.objectJson, this.id) }
+          : {}),
         finishReason: toFinishReason(outcome.result.finishReason),
         ...(usage !== undefined ? { usage } : {}),
         providerId: this.id,
@@ -274,7 +376,18 @@ export class AppleProvider implements LLMProvider {
     // the first `next()`, not lazily at it, so a bad request fails where the
     // caller made it.
     const native = this.requireNative();
-    const args = buildNativeRequest(request, this.id);
+    const args = buildNativeRequest(request, this.id, this.buildOptions(options));
+    if (args.tools.length > 0 && typeof native.resolveToolCall !== 'function') {
+      throw new LLMError(
+        { code: 'invalidRequest' },
+        {
+          message:
+            'This build of the native module cannot run tools (it has no `resolveToolCall`). ' +
+            'Check `capabilities().tools` before sending a request with tools.',
+          providerId: this.id,
+        }
+      );
+    }
     const requestId = nextRequestId();
 
     return bridgeNativeStream({
@@ -282,12 +395,59 @@ export class AppleProvider implements LLMProvider {
       requestId,
       providerId: this.id,
       start: () =>
-        native.startStream(requestId, args.messages, args.temperature, args.maxOutputTokens),
+        native.startStream(
+          requestId,
+          args.messages,
+          args.temperature,
+          args.maxOutputTokens,
+          args.schemaJson,
+          args.tools,
+          args.toolCallTimeoutMs
+        ),
+      toolHandlers: args.toolHandlers,
       ...(options?.signal !== undefined ? { signal: options.signal } : {}),
     });
   }
 
   // ---- helpers -----------------------------------------------------------
+
+  /**
+   * Drive a request through `stream` and collapse it into a `GenerateResult`.
+   *
+   * The `finish` event carries the same result `generate` would have returned,
+   * so this is a fold, not a reimplementation: text deltas and tool-call events
+   * are dropped (a `generate` caller asked for the answer, not the commentary)
+   * and any failure throws out of the iterator exactly as it would have
+   * rejected the promise.
+   */
+  private async generateViaStream(
+    request: GenerateRequest,
+    options?: RequestOptions
+  ): Promise<GenerateResult> {
+    for await (const event of this.stream(request, options)) {
+      if (event.type === 'finish') return event.result;
+    }
+    // Unreachable against the real bridge: the native side guarantees exactly
+    // one terminal event, and an error throws rather than ending the stream.
+    throw new LLMError(
+      { code: 'unknown', transient: true },
+      {
+        message: 'The native stream ended without a result.',
+        providerId: this.id,
+      }
+    );
+  }
+
+  private buildOptions(options?: RequestOptions): {
+    onToolCall?: ToolExecutor;
+    toolCallTimeoutMs?: number;
+  } {
+    const timeout = this.config.toolCallTimeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS;
+    return {
+      ...(options?.onToolCall !== undefined ? { onToolCall: options.onToolCall } : {}),
+      toolCallTimeoutMs: timeout,
+    };
+  }
 
   private requireNative(): AppleNativeModule {
     const native = this.resolveNative();

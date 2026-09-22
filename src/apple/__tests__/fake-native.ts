@@ -12,9 +12,11 @@ import type {
   AppleNativeModule,
   NativeAvailability,
   NativeCapabilities,
+  NativeCountTokensOutcome,
   NativeGenerateOutcome,
   NativeStreamEvent,
   NativeSubscription,
+  NativeToolDefinition,
 } from '../native/types';
 
 export class FakeNativeModule implements AppleNativeModule {
@@ -23,6 +25,10 @@ export class FakeNativeModule implements AppleNativeModule {
     contextWindow: 8192,
     locales: ['en', 'nl', 'fr', 'de', 'es'],
     modelLabel: 'AFM 3 Core Advanced',
+    supportsVision: true,
+    supportsGuidedGeneration: true,
+    supportsToolCalling: true,
+    supportsReasoning: false,
   };
   supportedLocales = new Set(['en', 'nl', 'nl-NL', 'fr', 'de', 'es']);
   generateResult: NativeGenerateOutcome = {
@@ -33,11 +39,30 @@ export class FakeNativeModule implements AppleNativeModule {
   /** Throw from a given method instead of resolving. */
   throwFrom: Partial<Record<'availability' | 'capabilities' | 'supportsLocale', Error>> = {};
 
+  countTokensResult: NativeCountTokensOutcome = { ok: true, count: 42 };
+
   readonly calls: {
     generate: unknown[][];
     startStream: unknown[][];
     cancel: string[];
-  } = { generate: [], startStream: [], cancel: [] };
+    prewarm: unknown[];
+    countTokens: unknown[];
+    resolveToolCall: { callId: string; resultJson: string | null; errorMessage: string | null }[];
+  } = {
+    generate: [],
+    startStream: [],
+    cancel: [],
+    prewarm: [],
+    countTokens: [],
+    resolveToolCall: [],
+  };
+
+  /**
+   * Call ids this fake still considers open. `resolveToolCall` answers `false`
+   * for anything else, which is how the real registry reports a call that timed
+   * out, was cancelled, or was already answered.
+   */
+  readonly openToolCalls = new Set<string>();
 
   /** Resolves when `startStream` has been called. */
   startStreamCalled: Promise<void>;
@@ -75,9 +100,10 @@ export class FakeNativeModule implements AppleNativeModule {
     requestId: string,
     messages: readonly { readonly role: string; readonly content: string }[],
     temperature: number | null,
-    maxOutputTokens: number | null
+    maxOutputTokens: number | null,
+    schemaJson: string | null
   ): Promise<NativeGenerateOutcome> {
-    this.calls.generate.push([requestId, messages, temperature, maxOutputTokens]);
+    this.calls.generate.push([requestId, messages, temperature, maxOutputTokens, schemaJson]);
     return this.generateResult;
   }
 
@@ -85,15 +111,72 @@ export class FakeNativeModule implements AppleNativeModule {
     requestId: string,
     messages: readonly { readonly role: string; readonly content: string }[],
     temperature: number | null,
-    maxOutputTokens: number | null
+    maxOutputTokens: number | null,
+    schemaJson: string | null,
+    tools: readonly NativeToolDefinition[],
+    toolCallTimeoutMs: number | null
   ): Promise<void> {
-    this.calls.startStream.push([requestId, messages, temperature, maxOutputTokens]);
+    this.calls.startStream.push([
+      requestId,
+      messages,
+      temperature,
+      maxOutputTokens,
+      schemaJson,
+      tools,
+      toolCallTimeoutMs,
+    ]);
     this.resolveStartStreamCalled();
   }
 
   async cancel(requestId: string): Promise<boolean> {
     this.calls.cancel.push(requestId);
+    // The real bridge resumes every suspended tool call for the request, after
+    // which a reply is too late.
+    this.openToolCalls.clear();
     return true;
+  }
+
+  async prewarm(
+    messages: readonly { readonly role: string; readonly content: string }[] | null
+  ): Promise<boolean> {
+    this.calls.prewarm.push(messages);
+    return true;
+  }
+
+  async countTokens(
+    messages: readonly { readonly role: string; readonly content: string }[]
+  ): Promise<NativeCountTokensOutcome> {
+    this.calls.countTokens.push(messages);
+    return this.countTokensResult;
+  }
+
+  async resolveToolCall(
+    callId: string,
+    resultJson: string | null,
+    errorMessage: string | null
+  ): Promise<boolean> {
+    this.calls.resolveToolCall.push({ callId, resultJson, errorMessage });
+    return this.openToolCalls.delete(callId);
+  }
+
+  /**
+   * Emit a `toolCall` event the way native does, and remember the call as open
+   * so exactly one reply to it counts.
+   */
+  emitToolCall(options: {
+    requestId?: string;
+    callId: string;
+    toolName: string;
+    argumentsJson: string;
+  }): void {
+    this.openToolCalls.add(options.callId);
+    this.emit({
+      requestId: options.requestId ?? this.lastStreamRequestId,
+      type: 'toolCall',
+      callId: options.callId,
+      toolName: options.toolName,
+      argumentsJson: options.argumentsJson,
+    });
   }
 
   addListener(
