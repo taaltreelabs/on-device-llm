@@ -254,3 +254,24 @@ func modelIsUsable() -> Bool {
   if case .available = SystemLanguageModel.default.availability { return true }
   return false
 }
+
+/// One tiny generation, to tell "available" from "actually works" (D9).
+///
+/// Returns a description of the failure, or `nil` when the model answered. The
+/// deadline is generous — a first generation after a reboot can be slow — but
+/// finite, because a wedged model has also been seen to hang rather than throw.
+func preflightFailure() async -> String? {
+  do {
+    let request = try BridgeRequest.parse(
+      messages: [["role": "user", "content": "Reply with exactly: OK"]],
+      temperature: 0,
+      maximumResponseTokens: 8
+    )
+    try await withDeadline(.seconds(90), name: "preflight") {
+      _ = try await GenerationEngine.generate(request)
+    }
+    return nil
+  } catch {
+    return (error as? CheckFailure)?.message ?? String(describing: error)
+  }
+}

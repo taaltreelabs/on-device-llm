@@ -40,6 +40,31 @@ guard modelIsUsable() else {
 
 print("model: \(SystemLanguageModel.default.variant.displayName)")
 
+// DECISIONS.md D9, in its natural habitat: `availability` reports `.available`
+// while every generation fails with `com.apple.SensitiveContentAnalysisML
+// error 15` wrapping `ModelManagerError 1013`, `contextSize` reads 0, and the
+// variant quietly downgrades. Apple's own `fm` CLI fails identically, so it is
+// the machine's model assets, not this code — but the availability check alone
+// cannot tell the two apart, which is exactly why D9 exists.
+//
+// Without this preflight the run reports ~28 failures that say nothing about
+// the change under test, and a real regression would be invisible among them.
+if let blocker = await preflightFailure() {
+  print(
+    """
+
+    SKIPPED: the model reports itself available but cannot generate.
+
+    \(blocker)
+
+    This is the DECISIONS.md D9 state: the model assets on this machine are
+    wedged (`fm respond` fails the same way). Logic-only checks would still
+    pass, but every check that needs the model would fail for reasons that have
+    nothing to do with the code. Nothing was verified.
+    """)
+  exit(0)
+}
+
 let harness = Harness()
 
 if wants("baseline") { await runBaselineChecks(harness) }
