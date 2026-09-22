@@ -65,13 +65,17 @@
   "dependencies": {},
   "devDependencies": {
     "@babel/core": "^7.26.0",
+    "@testing-library/react": "^16.3.3",
     "@types/react": "~19.1.1",
+    "@types/react-dom": "~19.1.11",
     "babel-preset-expo": "~55.0.8",
     "eslint": "~9.39.4",
     "eslint-config-universe": "^15.0.3",
     "expo": "^57.0.23",
     "fast-check": "^4.10.2",
+    "jsdom": "^27.4.0",
     "prettier": "^3.0.0",
+    "react-dom": "^19.3.0",
     "react-native": "0.82.1",
     "typescript": "^5.9.2",
     "vitest": "^5.0.0"
