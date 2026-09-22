@@ -48,6 +48,14 @@ export interface NativeErrorCause {
   readonly nativeDomain?: string;
   readonly nativeErrorCode?: number;
   readonly nativeDetail?: string;
+  /**
+   * What the model actually produced, when structured output failed to parse
+   * (`GeneratedContent.ParsingError.rawContent`). The first thing anyone
+   * debugging a schema asks for, and the one piece of evidence that exists
+   * nowhere else — so it rides on the cause rather than being summarised into
+   * the message, which would put response text into logs by default.
+   */
+  readonly rawContent?: string;
 }
 
 function buildCause(payload: NativeErrorPayload): NativeErrorCause {
@@ -57,6 +65,7 @@ function buildCause(payload: NativeErrorPayload): NativeErrorCause {
     ...(payload.nativeDomain !== undefined ? { nativeDomain: payload.nativeDomain } : {}),
     ...(payload.nativeCode !== undefined ? { nativeErrorCode: payload.nativeCode } : {}),
     ...(payload.nativeDetail !== undefined ? { nativeDetail: payload.nativeDetail } : {}),
+    ...(payload.rawContent !== undefined ? { rawContent: payload.rawContent } : {}),
   };
 }
 

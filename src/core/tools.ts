@@ -19,8 +19,8 @@
  *   with a tool call already in flight.
  *
  * Keeping them together makes "every tool the model can see has something to
- * run" checkable before the request starts, which is exactly what
- * `validateTools` does.
+ * run" checkable before the request starts, which is what the Apple provider's
+ * `buildNativeRequest` does — one rejection, at the call site, naming the tool.
  *
  * `execute` is optional on the type because a definition is still meaningful
  * without one: a cloud provider that round-trips tool calls to the caller, or
@@ -90,29 +90,4 @@ export interface ToolDefinition {
   readonly parameters: JsonSchema;
   /** The handler. See {@link ToolExecutor}. */
   readonly execute?: ToolExecutor;
-}
-
-/**
- * Check that every tool can actually be run, before anything starts.
- *
- * Providers that execute tools call this during request validation, so a
- * missing handler or a duplicate name is an `invalidRequest` at the call site
- * rather than a failure halfway through a generation. Returns the resolved
- * handler for each tool.
- */
-export function resolveToolHandlers(
-  tools: readonly ToolDefinition[],
-  fallback: ToolExecutor | undefined
-): Map<string, ToolExecutor> {
-  const handlers = new Map<string, ToolExecutor>();
-  for (const tool of tools) {
-    const execute = tool.execute ?? fallback;
-    if (execute === undefined) {
-      throw new Error(
-        `The tool "${tool.name}" has no \`execute\` handler and no \`onToolCall\` was supplied.`
-      );
-    }
-    handlers.set(tool.name, execute);
-  }
-  return handlers;
 }

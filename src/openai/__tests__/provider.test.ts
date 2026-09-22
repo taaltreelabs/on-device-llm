@@ -698,3 +698,51 @@ describe('config validation', () => {
     expect(() => createOpenAIProvider({ baseUrl: BASE, model: '' })).toThrow();
   });
 });
+
+describe('tool calling: advertised as unsupported, and rejected as such', () => {
+  const toolRequest = {
+    messages: [{ role: 'user' as const, content: 'weather?' }],
+    tools: [
+      {
+        name: 'getWeather',
+        description: 'Current weather for a city.',
+        parameters: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] },
+        execute: () => 'sunny',
+      },
+    ],
+  };
+
+  it('reports tools: false', async () => {
+    const { fetch } = fakeFetch([]);
+    const provider = createOpenAIProvider({ baseUrl: BASE, model: 'm', fetch });
+    await expect(provider.capabilities()).resolves.toMatchObject({ tools: false });
+  });
+
+  it('rejects a request carrying tools instead of answering without them', async () => {
+    const { fetch, requests } = fakeFetch([]);
+    const provider = createOpenAIProvider({ baseUrl: BASE, model: 'm', fetch });
+
+    const error = await provider.generate(toolRequest).catch((e: unknown) => e);
+    expect(isLLMError(error, 'invalidRequest')).toBe(true);
+    expect((error as Error).message).toMatch(/does not support tool calling/);
+
+    const streamError = await drain(provider.stream(toolRequest)).catch((e: unknown) => e);
+    expect(isLLMError(streamError, 'invalidRequest')).toBe(true);
+
+    // The point of rejecting: no request was sent, so the model never answered
+    // a tool-shaped question without its tools.
+    expect(requests).toHaveLength(0);
+  });
+
+  it('still accepts a request with an empty tools array', async () => {
+    const { fetch } = fakeFetch([
+      jsonResponse({
+        choices: [{ message: { content: 'hi' }, finish_reason: 'stop' }],
+      }),
+    ]);
+    const provider = createOpenAIProvider({ baseUrl: BASE, model: 'm', fetch });
+    await expect(
+      provider.generate({ messages: [{ role: 'user', content: 'hi' }], tools: [] })
+    ).resolves.toMatchObject({ text: 'hi' });
+  });
+});

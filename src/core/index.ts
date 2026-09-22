@@ -141,12 +141,7 @@ export {
   type SchemaProperty,
   type StringNode,
 } from './schema';
-export {
-  resolveToolHandlers,
-  type ToolCall,
-  type ToolDefinition,
-  type ToolExecutor,
-} from './tools';
+export type { ToolCall, ToolDefinition, ToolExecutor } from './tools';
 export {
   MockProvider,
   type MockCall,

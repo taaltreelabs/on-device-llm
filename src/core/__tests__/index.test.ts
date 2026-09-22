@@ -28,7 +28,7 @@ import {
 import * as core from '../index';
 
 describe('core public API', () => {
-  it('exports the runtime surface Phases 1-2 promise, and no default export', () => {
+  it('exports the runtime surface Phases 1-3 promise, and no default export', () => {
     expect(Object.keys(core).sort()).toEqual([
       'DEFAULT_CHARS_PER_TOKEN',
       'DEFAULT_KEEP_RECENT_TURNS',
@@ -40,6 +40,7 @@ describe('core public API', () => {
       'DEFAULT_SUMMARY_MARKER',
       'DEFAULT_SUMMARY_THRESHOLD',
       'DEFAULT_SYSTEM_STATE_MARKER',
+      'DROPPED_ANNOTATIONS',
       'LLMError',
       'MockProvider',
       'UNKNOWN',
@@ -58,6 +59,7 @@ describe('core public API', () => {
       'isUnknown',
       'measureMessages',
       'normalizeContextWindow',
+      'normalizeJsonSchema',
       'projectMessages',
       'rollingSummary',
       'slidingWindow',
