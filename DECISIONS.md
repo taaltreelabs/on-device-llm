@@ -2,6 +2,52 @@
 
 Newest first. Each entry: what was decided, why, and what evidence it rests on. Supporting research lives in `docs/research/`.
 
+## 2026-09-21 — Phase 3 steps 4–7 (prewarm, tokens, structured output, tools)
+
+### D23: D6 upheld — normalize in TypeScript, `JSONDecoder` in Swift — but the supported set is smaller than the *decodable* set
+
+D6 proposed normalizing the developer's JSON Schema in TypeScript and decoding it natively through `GenerationSchema`'s `Codable` conformance, with `DynamicGenerationSchema` construction as a fallback if the decode proved too limited. **The decode path is confirmed and is the only path we ship**; no tree-walk into `DynamicGenerationSchema` exists in the codebase.
+
+The worry behind the fallback clause was that the decoder silently drops constraints (sdk-surface.md §7 measured `minLength`, `maxLength`, `format` and `multipleOf` disappearing). Measured against the framework: every constraint we actually promise survives. The harness decodes the fixture document and re-encodes the resulting `GenerationSchema`, and `minimum`, `maximum`, `enum`, `minItems` and `maxItems` are all still there. Silent dropping is not a property of the decoder, it is a property of *those four keywords* — and the normalizer rejects all four (and the rest of the unhonourable set) by name and path, so nothing reaches the decoder that it would quietly discard.
+
+**The surprise, and the reason the split is where it is.** `pattern` decodes *and* survives the round trip — and then fails at generation time with `LanguageModelError.unsupportedGenerationGuide` on AFM 3 Core Advanced. "The schema was accepted" and "the model will generate against it" are different questions, and only the second one matters to a caller. So:
+
+- the **portable** normalizer lives in `src/core/schema.ts`: it validates the subset, inlines non-recursive `$ref`, rejects `allOf`/`oneOf`/`not`/conditionals, type unions, recursive `$ref`, tuple `items`, non-string enums, `additionalProperties: true` and every accepted-then-ignored constraint, each with the keyword and its path in the message; it emits a small IR, and drops a documented list of annotations (`$schema`, `$id`, `$comment`, `default`, `deprecated`, `examples`, `readOnly`, `writeOnly`);
+- the **Apple** encoder lives in `src/apple/schema.ts`: it writes the dialect the decoder demands (`title`, `additionalProperties`, `required` and Apple's `x-order` on every object node, `required: []` included) and rejects `pattern` — a fact about *this model*, not about JSON Schema, which is exactly why it does not belong in `core`.
+
+A future provider reuses the normalizer and writes its own encoder. `harness/Sources/Runner/ConstraintMatrixChecks.swift` keeps the supported/unsupported split honest against the live model; it is the regression test for a future OS widening or narrowing the set.
+
+### D24: Tools are definitions *with their handlers*, per request, and a request carrying tools runs on the streaming path
+
+`GenerateRequest.tools` carries `{ name, description, parameters, execute }` — the handler travels with the definition. The alternatives were configuring handlers on the provider (wrong: tools belong to a conversation, not to a model, and the Phase 4 router picks the provider per request) or passing a parallel handler map (wrong: two structures to keep in sync, and the failure — a definition with no handler — surfaces mid-generation with a call already in flight). Keeping them together makes "every tool the model can see has something to run" checkable before the request starts, which `buildNativeRequest` does; `RequestOptions.onToolCall` is the documented fallback for an app that dispatches every tool through one function.
+
+The protocol, end to end: native `BridgedTool.call` registers a continuation under a fresh `callId`, *then* emits a `toolCall` event (registering first is not an ordering nicety — emitting first opens a window in which a fast handler answers a `callId` the registry has never heard of, which the late-reply rule would then correctly and fatally ignore) → TypeScript starts the handler **without awaiting it**, so two calls can be in flight → `resolveToolCall(callId, resultJSON | errorMessage)` → the continuation resumes and generation continues to completion. A string result is passed through; anything else is `JSON.stringify`d.
+
+`generate()` with tools delegates to `stream()` and folds the events into the result. A tool call has to reach JavaScript *mid-generation* and `native.generate` is one promise with no event channel; building a second tool protocol for the non-streaming path would have doubled the surface for no behaviour. `finishReason: 'toolCalls'` therefore never appears in practice — the framework resolves tool calls internally and finishes normally — and is reserved for a generation that genuinely ends with calls outstanding.
+
+`toolCall` is emitted to the consumer as a `StreamEvent` for observability only; there is deliberately no `toolResult` event, because the handler is the caller's own code and already knows what it returned.
+
+### D25: A tool call has a deadline (default 30s); timeout is transient, a handler failure is not, and cancellation resumes every continuation
+
+Every prior-art bridge surveyed in D2 has neither a timeout nor cancellation of an in-flight tool call, which means a handler that forgets to answer pins the neural engine for the life of the process with nothing in the log. Ours:
+
+- **Timeout** (`AppleProviderConfig.toolCallTimeoutMs`, default 30 000): the registry arms a timer per call; when it fires the continuation is resumed with an error and the request fails as `unknown` with `transient: true`. Transient because the request was well-formed and the thing that failed — an app handler waiting on the network, a JS thread behind a render — may well succeed on a retry, and `transient` is the hint the Phase 4 router branches on.
+- **Handler failure** → `unknown` with `transient: false`: app code failed deterministically as far as we can tell, so a router must not treat it as a reason to retry elsewhere. The handler's original `Error` is preserved as the `LLMError`'s `cause` (the native side only knows *that* a tool failed; only the JavaScript half still holds the exception), with the native diagnostics alongside it.
+- **Cancellation**: `cancel(requestId)` resumes every pending continuation for that request *and* cancels the generation task. Cancelling the task alone is not enough — the framework cannot interrupt our `await`, so the tool call would stay suspended. Handlers are also handed an `AbortSignal` that fires when the request ends, however it ends.
+- **Late and duplicate replies are no-ops** returning `false`, never crashes. Resuming a continuation twice is fatal in Swift, and the race is entirely normal: JavaScript cannot know the native timer fired. A registry keyed by `callId` (not by `requestId`) is what makes two concurrent calls safe.
+
+Verified against the live model: a tool round trip, a timeout firing, and a cancel mid-call leaving `pendingCount == 0`; plus registry-level checks for double-resolve, out-of-order concurrent resolution and post-cancel replies. The TypeScript half is covered over the fake native module (11 checks).
+
+### D26: `prewarm` is exposed as a hint with a boolean answer, and is documented as making no promise
+
+`LanguageModelSession.prewarm(promptPrefix:)` exists, returns immediately, reports nothing, and the framework is free to ignore it; Apple's guidance is to call it only when a second or more will pass before the request. We expose it as optional `prewarm(messages?)` on `LLMProvider`, resolving `true` when the hint was delivered and `false` when there was nothing to deliver it to (wrong platform, older native half) — and it never throws, because a caller has nothing to do about a failed hint.
+
+It deliberately makes no performance claim, and the harness deliberately asserts none: `prewarm` then `generate` works, and prewarming a history that ends with an assistant turn is allowed (the case it is *for* — a chat screen open and a user still typing, which is why `TranscriptBuilder.prepare` grew a `requirePrompt: false` mode that token counting also uses). Any timing assertion against a shared machine would be a flaky test dressed up as evidence.
+
+### D27: `capabilities()` answers from the model's flags *and* from what the native half implements
+
+`structuredOutput` follows `LanguageModelCapabilities.guidedGeneration`, `tools` follows `toolCalling` **and** the presence of `resolveToolCall` on the resolved native module, and `tokenCounting` is `'exact'` when `countTokens` is present. The second half of each conjunction is not defensive programming for its own sake: npm makes a JavaScript half newer than the installed native half entirely possible, and a provider that advertises a protocol the native side cannot speak sends the Phase 4 router *toward* a provider that is about to fail. `countTokens` throws rather than estimating on failure, which is what lets `createMeasure` record `estimatorAfterCounterFailure` and widen the safety margin from 64 tokens to 256 (D10) — a silent estimate here would keep the narrow margin under an exact-looking number, which is how a "measured" budget overflows.
+
 ## 2026-09-21 — Phase 3 steps 1–3 (Apple native provider)
 
 ### D16: Classic Expo definition DSL, not the macro-based Modules API 2.0
