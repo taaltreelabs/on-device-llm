@@ -2,6 +2,75 @@
 
 Newest first. Each entry: what was decided, why, and what evidence it rests on. Supporting research lives in `docs/research/`.
 
+## 2026-09-22 — Phase 4 (router)
+
+### D28: The routing policy is declarative data with one narrow escape hatch, and it only picks the *first* provider
+
+`policy` is either a `RoutePolicyRules` object — `preferred`, `require`, `tags`, `where` — or a function `(context) => providerId | undefined` (shorthand for `{ select: fn }`). The two coexist for a reason each: the object form is inspectable, serializable, diffable in a review, and testable from a literal without running anything, which is what a routing rule needs to be when it decides where a user's words go; the function form exists because no fixed vocabulary survives contact with a real app, and the alternative to an escape hatch is a config language that grows one field per user.
+
+Three constraints on the shape are load-bearing:
+
+1. **The policy chooses a starting point, not an execution plan.** Fallback order after the first choice is always the configured order. A policy that returned an ordering could silently reinvent — or disable — the fallback machinery, and `attempts` would stop being comparable between requests.
+2. **`require` can only ever narrow the field.** A constraint may make the router run out of providers; it can never send a request somewhere it would not otherwise have sent one. That makes "could this policy leak a prompt to the cloud?" answerable by reading `providers` alone.
+3. **`select` outranks `require` for its own choice, and an unknown id is ignored.** An explicit choice beats a declarative filter — and the function was handed availability, capabilities and token counts, so it could have checked. An id naming no configured provider falls through to the rules rather than failing the request.
+
+The candidate facts a policy sees are exactly the facts the router used (`RouteCandidate`: availability, capabilities, `tokens`, `tokenSource`, `fitsContextWindow`, `index`), so a predicate never re-derives them and never pays for the native calls twice.
+
+**The context-window check.** `estimateTokens` is computed once per request as the baseline; a provider's own `countTokens()` is called only when it has one *and* a known `contextWindow` — the only case where an exact number can change the decision. An `UNKNOWN` window is **not** a disqualifier (`fitsContextWindow: 'unknown'`), following D11: every cloud endpoint is in that state, refusing them all would be worse than trying, and a provider that cannot describe its window still reports a real `contextOverflow` with real numbers. `maxOutputTokens` is counted against the same window because Apple's `contextSize` is a combined input+output budget. No safety margin is applied here — that is `fitContext`'s job, and a router that applied its own would skip providers twice over.
+
+**Cache and staleness.** Routing reads availability/capabilities through a per-provider TTL cache (`cacheTtlMs`, default 5 000 ms; `0` disables it; concurrent lookups share one in-flight promise). Three providers behind an uncached router is six native round trips before a single token. The staleness is safe in the direction that matters: per D9 `available: true` never meant "the next request will succeed", so a stale `true` costs nothing a fresh one would not — the failure is what the fallback chain is for. A stale `false` can pass over a provider that just became usable, which is bounded by the TTL, self-correcting, and strictly less costly than the alternative. The router's own `availability()`/`capabilities()` always refresh and reprime the cache, so they double as the "check now" call and as the invalidation hook `useAvailability` needs.
+
+### D29: The task tag rides on `GenerateRequest`, not on `RequestOptions` or `Message`
+
+`GenerateRequest.taskTag?: string`. The plan calls for "a caller-supplied task tag (for example `simple` vs. `reasoning`)" and there were three places to put it.
+
+Not on `Message`: a tag describes the whole request, not one turn, and widening `Message` pushes a routing concern into the type every provider, every strategy and every stored conversation consumes (the same argument that kept the summary marker out of `Message` in D13).
+
+Not on `RequestOptions`: that bag holds the things that *cannot* be serialized and change on every invocation — an `AbortSignal` and a tool dispatcher. A tag is plain data that should survive being stored, replayed, logged as metadata, and threaded through the context manager and the hooks alongside the messages it describes. Putting it in `RequestOptions` would also force `useChat` to thread a second parameter through every call site that already carries a request.
+
+So it goes on the request, through the seam `generation.ts` documents for exactly this ("a provider written today keeps compiling; it just ignores what it does not know"). The contract added with it is explicit and normative: **every provider must ignore `taskTag`, and in particular must not reject a request for carrying one.** The `openai` and `apple` providers build their native payloads field by field from `messages`/`schema`/`tools`/sampling options and never spread the request, so both already ignore it cleanly; a routed request arrives at its provider with the tag still attached, which is the case that would otherwise break.
+
+### D30: Default fallback triggers — including `rateLimited` on, `unsupportedLocale` on, and `unknown` split in two
+
+| code | default | configurable |
+| --- | --- | --- |
+| `unavailable` | **on** | yes |
+| `contextOverflow` | **on** | yes |
+| `network` | **on** | yes |
+| `rateLimited` | **on** | yes |
+| `guardrail` | off | yes |
+| `unsupportedLocale` | **on** | yes |
+| `unknown` + `transient === true` | **on** | yes (`unknownTransient`) |
+| `unknown`, otherwise | off | yes (`unknown`) |
+| `cancelled` | never | **no** |
+| `invalidRequest` | never | **no** |
+
+The first three and `guardrail` are the plan's (§4/§5). The rest:
+
+- **`cancelled` and `invalidRequest` are not fields on `FallbackTriggers` at all.** A boolean nobody may set to `true` is a boolean that eventually gets set to `true` by accident, so the prohibition lives in the type — `{ fallback: { cancelled: true } }` does not compile — and the runtime asserts it independently. `cancelled` means the caller asked to stop, and spending a second provider's money and battery is the one thing they definitely did not want. `invalidRequest` will be just as invalid at the next provider (D6's rejected schema constructs, D17's missing trailing user message).
+- **`rateLimited` on.** Failing over is not retrying: `resetDate` may be minutes away, the limit belongs to *that* provider, and a second provider is precisely the thing that makes a rate limit survivable. Same-provider retry stays out of the router entirely (see D31).
+- **`unsupportedLocale` on.** A capability gap, not a malfunction. Apple enumerates 24 locales (D7) and a cloud model usually covers the rest, so falling back is the behaviour a Polish-speaking user wants, and the alternative is erroring on something another configured provider can do. Switchable because it does mean the prompt leaves the device — the same trade `unavailable` already makes by default.
+- **`unknown` split.** D9 created this lane and D25 populates it: `transient: true` is a provider saying "this may work elsewhere or later" (a wedged model manager, a tool-call timeout), which is the exact signal a router exists to act on, so it is on. `transient: false` is a deterministic failure in app code (a tool handler that threw) and must not be retried. `transient: undefined` is a provider that does not know, and treating "don't know" as retryable makes every mystery failure cost two generations and two bills — so `undefined` shares the `false` switch, off by default.
+- An unrecognised future code (`timeout`, `refusal`, `parseError` are the ones `errors.ts` names) defaults to **not** falling back. A failure nobody has classified should propagate until someone decides what it means.
+
+### D31: One shot per provider; the last real error is rethrown, and the chain lives on `onRoute`
+
+A provider is tried **at most once per request**. Same-provider retry needs backoff, jitter and a budget, all of which belong to the caller who knows whether this is a background summarisation or a user watching a spinner — and a router that retried internally would make `attempts` useless as a telemetry signal.
+
+When every provider fails, the router **rethrows the last real `LLMError`, verbatim, with the failing provider's own `providerId`**. A `RouterExhaustedError` was considered and rejected: `errors.ts` exists precisely so that there is one error class and no `instanceof` ladder, and a new class would break every `catch (e) { if (isLLMError(e)) … }` written against it. The attempt chain is not lost — it goes to `onRoute`, which is where telemetry belongs and where it cannot tempt anyone into control flow.
+
+A synthetic error is constructed only when **no provider was asked at all**: `unavailable` (with the most hopeful aggregated reason and a `detail` listing every provider's verdict) when every skip was an availability skip, `contextOverflow` (carrying the real window and the measured tokens) when a window skip was involved, and `invalidRequest` otherwise, since a `require` block no provider can satisfy is a request that will fail again unchanged.
+
+**Streaming.** The fallback window closes on the first event **handed to the consumer**. Events are forwarded as they arrive and are never pre-buffered to widen that window — buffering a stream to make the router's job easier turns every stream into a non-stream, which is the thing streaming exists to avoid. `toolCall` counts as a yielded event: by the time a consumer sees one, a handler the app wrote has already run, and a second provider would run it again (D24). A consumer that breaks out of its `for await` is recorded as `cancelled`, not as a success.
+
+### D32: The router's `capabilities()` reports one provider's answer, never a merge
+
+`availability()` is available iff **any** provider is (a router's job is to find a working provider; reporting the preferred one would have a perfectly functional router claim to be broken because a model is still downloading), with the aggregated reason and a per-provider `detail` when none is.
+
+`capabilities()` returns the **preferred available provider's** capabilities verbatim. A merge is a lie in both directions: union the booleans and the router claims tool calling the chosen provider cannot do; intersect them and it denies structured output the chosen provider supports perfectly well, so callers stop asking for it; take the largest `contextWindow` and the context manager budgets 128K for a request about to go to a 4K on-device model. One provider's honest answer beats a synthetic one nobody can act on, and the next request most likely goes to that same provider.
+
+`countTokens` and `prewarm` are optional *per instance*, so their presence is decided once at construction — present iff **some** configured provider has it — because a method cannot appear later just because a provider came back, and a caller that captured `router.countTokens` must not find it gone. Which provider serves the call is decided per call (preferred available provider that has it). When no available provider can count, `countTokens` **throws** rather than estimating: `createMeasure` catches exactly that and records `estimatorAfterCounterFailure`, widening the safety margin from 64 to 256 tokens (D10, D27). A silent estimate would keep the narrow margin under an exact-looking number, which is how a "measured" budget overflows. `prewarm` never throws and answers `false` when there is nothing to warm (D26).
+
 ## 2026-09-21 — Phase 3 steps 4–7 (prewarm, tokens, structured output, tools)
 
 ### D23: D6 upheld — normalize in TypeScript, `JSONDecoder` in Swift — but the supported set is smaller than the *decodable* set
