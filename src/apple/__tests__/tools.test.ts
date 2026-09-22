@@ -140,7 +140,14 @@ describe('tool calling over the bridge', () => {
     finishEvent(native);
     const last = await withDeadline(iterator.next(), 'finish event');
     expect((last.value as StreamEvent & { type: 'finish' }).result.text).toBe('It is sunny.');
-    // Handlers are told the request is over, so long-running work can stop.
+
+    // The generator's cleanup runs when the consumer comes back for the next
+    // event (or leaves the loop) — generator semantics, not a delay we chose.
+    // A `for await` loop always does, which is when handlers learn the request
+    // is over and long-running work can stop.
+    expect(seen[0]?.signal.aborted).toBe(false);
+    const done = await withDeadline(iterator.next(), 'stream completion');
+    expect(done.done).toBe(true);
     expect(seen[0]?.signal.aborted).toBe(true);
   });
 
