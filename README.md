@@ -4,7 +4,7 @@ One interface over Apple's on-device Foundation Model and your own cloud endpoin
 React Native and Expo apps. The on-device model answers when it is available and the
 request suits it; a Chat Completions-compatible endpoint you configure answers when it
 is not. In between sit the parts every app otherwise writes by hand: a context-window
-budget manager that keeps a conversation inside a 4K window, a routing policy you can
+budget manager that keeps a conversation inside a 4–8K token window, a routing policy you can
 read and test, a normalized error taxonomy both providers map onto, and React hooks
 wired to all of it. Prompts stay on the device unless your policy sends them elsewhere,
 and the package never logs or transmits prompt or response content.
