@@ -26,13 +26,15 @@ import {
   Button,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
+// Core SafeAreaView is deprecated in RN 0.86 (LogBox warns at launch) and will
+// be removed; this is the replacement RN's own warning points at.
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   checkWeatherReport,
@@ -474,91 +476,93 @@ export default function App() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={0}>
-        <StatusLine providerId={provider.id} availability={availability} />
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={0}>
+          <StatusLine providerId={provider.id} availability={availability} />
 
-        <ProviderToggle active={providerKind} disabled={isGenerating} onChange={changeProvider} />
+          <ProviderToggle active={providerKind} disabled={isGenerating} onChange={changeProvider} />
 
-        <AvailabilityPanel
-          availability={availability}
-          capabilities={capabilities}
-          loading={isCheckingAvailability}
-          onRefresh={handleRefreshPress}
-        />
-
-        {error !== undefined ? (
-          <ErrorBanner error={error} onDismiss={() => setError(undefined)} />
-        ) : null}
-
-        <ScrollView
-          ref={scrollRef}
-          style={styles.messageList}
-          contentContainerStyle={styles.messageListContent}
-          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
-          {messages.length === 0 ? (
-            <Text style={styles.emptyState}>No messages yet -- send one below.</Text>
-          ) : (
-            messages.map((message) => <MessageBubble key={message.id} message={message} />)
-          )}
-        </ScrollView>
-
-        <View style={styles.demosRow}>
-          <View style={styles.demosButtonWrapper}>
-            <Button
-              title="JSON demo"
-              onPress={() => {
-                runJsonDemo();
-              }}
-              disabled={isGenerating}
-            />
-          </View>
-          <View style={styles.demosButtonWrapper}>
-            <Button
-              title="Tool demo"
-              onPress={() => {
-                runToolDemo();
-              }}
-              disabled={isGenerating}
-            />
-          </View>
-        </View>
-
-        {contextDebug !== undefined ? (
-          <Text style={styles.debugLine}>
-            Sent {contextDebug.sentCount} of {contextDebug.historyCount} messages in history
-            {contextDebug.droppedCount > 0
-              ? ` (${contextDebug.droppedCount} dropped to fit the context window)`
-              : ''}
-          </Text>
-        ) : null}
-
-        <View style={styles.inputRow}>
-          <TextInput
-            style={styles.textInput}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Message"
-            editable={!isGenerating}
-            multiline
+          <AvailabilityPanel
+            availability={availability}
+            capabilities={capabilities}
+            loading={isCheckingAvailability}
+            onRefresh={handleRefreshPress}
           />
-          {isGenerating ? (
-            <Button title="Stop" color="#b91c1c" onPress={stop} />
-          ) : (
-            <Button
-              title="Send"
-              onPress={() => {
-                send();
-              }}
-              disabled={inputText.trim() === ''}
+
+          {error !== undefined ? (
+            <ErrorBanner error={error} onDismiss={() => setError(undefined)} />
+          ) : null}
+
+          <ScrollView
+            ref={scrollRef}
+            style={styles.messageList}
+            contentContainerStyle={styles.messageListContent}
+            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
+            {messages.length === 0 ? (
+              <Text style={styles.emptyState}>No messages yet -- send one below.</Text>
+            ) : (
+              messages.map((message) => <MessageBubble key={message.id} message={message} />)
+            )}
+          </ScrollView>
+
+          <View style={styles.demosRow}>
+            <View style={styles.demosButtonWrapper}>
+              <Button
+                title="JSON demo"
+                onPress={() => {
+                  runJsonDemo();
+                }}
+                disabled={isGenerating}
+              />
+            </View>
+            <View style={styles.demosButtonWrapper}>
+              <Button
+                title="Tool demo"
+                onPress={() => {
+                  runToolDemo();
+                }}
+                disabled={isGenerating}
+              />
+            </View>
+          </View>
+
+          {contextDebug !== undefined ? (
+            <Text style={styles.debugLine}>
+              Sent {contextDebug.sentCount} of {contextDebug.historyCount} messages in history
+              {contextDebug.droppedCount > 0
+                ? ` (${contextDebug.droppedCount} dropped to fit the context window)`
+                : ''}
+            </Text>
+          ) : null}
+
+          <View style={styles.inputRow}>
+            <TextInput
+              style={styles.textInput}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Message"
+              editable={!isGenerating}
+              multiline
             />
-          )}
-        </View>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            {isGenerating ? (
+              <Button title="Stop" color="#b91c1c" onPress={stop} />
+            ) : (
+              <Button
+                title="Send"
+                onPress={() => {
+                  send();
+                }}
+                disabled={inputText.trim() === ''}
+              />
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </SafeAreaProvider>
   );
 }
 
