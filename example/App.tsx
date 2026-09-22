@@ -480,7 +480,11 @@ export default function App() {
       <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
         <KeyboardAvoidingView
           style={styles.flex}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          // 'padding' on BOTH platforms: Android 15+ enforces edge-to-edge for
+          // targetSdk 35+, where the old adjustResize no longer resizes the
+          // window, so without padding the input row hides under the keyboard
+          // (observed on the API 36 emulator).
+          behavior="padding"
           keyboardVerticalOffset={0}>
           <StatusLine providerId={provider.id} availability={availability} />
 
