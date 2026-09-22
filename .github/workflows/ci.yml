@@ -1,0 +1,218 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # typecheck, lint (incl. the isolation rule), unit tests, and the
+  # bare-Node import test (docs/plan.md §5 Phase 5). Integration tests
+  # against `fm serve` (src/**/__tests__/fm-serve*.integration.test.ts)
+  # self-skip when the server is unreachable (DECISIONS.md D8), so they
+  # run here too but are inert in CI by design — no separate exclusion
+  # needed.
+  checks:
+    name: typecheck, lint, unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint (includes the core/openai/react isolation rule)
+        run: npm run lint
+
+      - name: Check isolation (built-output + bare-Node import test)
+        run: npm run check:isolation
+
+      - name: Unit tests
+        # CI-only flake mitigation: a known timing-sensitive test flakes
+        # roughly once per ~many runs under CI's CPU contention (not seen
+        # locally). `test:ci` (package.json) raises the per-test timeout
+        # and allows one retry; local `npm test`/`npm run test:watch` are
+        # untouched.
+        run: npm run test:ci
+
+  # Verifies the published tarball contents with `npm pack` (docs/plan.md
+  # §5): compiled JS + type declarations for every subpath export, the
+  # ios/ sources + podspec, the android/ stub module, expo-module.config
+  # .json, README.md, LICENSE — and asserts the example app, the SwiftPM
+  # harness, docs/, src/, scripts/, .github/, and any test file are all
+  # absent. See scripts/check-pack.mjs for the exact assertions.
+  pack:
+    name: verify published tarball contents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        # `npm ci` runs the "prepare" lifecycle script, which builds
+        # `build/` fresh — check:pack's `npm pack --dry-run` also runs
+        # "prepare" again before packing, so no separate build step is
+        # needed here.
+        run: npm ci
+
+      - name: check:pack
+        run: npm run check:pack
+
+  # Compile-check the example app for iOS (docs/plan.md §5: "an iOS build
+  # of the example app"). example/ios and example/android are gitignored
+  # prebuild output (Expo config plugins regenerate them from app.json),
+  # so this job runs `expo prebuild` itself rather than checking anything
+  # out.
+  #
+  # --- Xcode 27 runner-image finding (researched 2026-09-22) -------------
+  # DECISIONS.md D4 pins the platform floor at iOS 27 / Xcode 27.1. As of
+  # this writing (see https://github.com/actions/runner-images), GitHub's
+  # general-availability hosted macOS image is `macos-26`, which ships
+  # Xcode 26.0 through 26.6 (iOS SDK up to 26.5) — below our floor, so it
+  # cannot build against the OnDeviceLlm podspec's iOS 27.0 deployment
+  # target (see the autolinking deployment-target trap documented in
+  # DECISIONS.md just above D4).
+  #
+  # A `xcode-27` / `xcode-27-xlarge` (arm64) runner label DOES exist, but
+  # it is explicitly a weekly-updated PREVIEW/beta image: GitHub's own
+  # runner-images README states beta images carry no Actions SLA and "may
+  # take on different availability, i.e. public vs private" — i.e. it may
+  # not be enabled for every account or org, and its exact Xcode point
+  # release can change under us week to week.
+  #
+  # Decision: target `xcode-27` (it exists and is the only image meeting
+  # our floor) but keep `continue-on-error: true` with a generous
+  # `timeout-minutes`, so that a preview image which is unavailable to
+  # this account, renamed, or briefly broken by a weekly update cannot
+  # block merges to main. Revisit once `xcode-27` reaches GA — at that
+  # point drop `continue-on-error` and this comment block should be
+  # trimmed to a one-line note.
+  # -------------------------------------------------------------------
+  example-ios:
+    name: example app iOS build (compile check)
+    runs-on: xcode-27
+    continue-on-error: true
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build
+
+      - name: Report selected Xcode
+        run: xcodebuild -version
+
+      - name: Install example dependencies
+        working-directory: example
+        run: npm ci
+
+      - name: Prebuild iOS native project
+        working-directory: example
+        # Regenerates the gitignored example/ios/ from app.json + the
+        # expo-build-properties config plugin, which sets
+        # ios.deploymentTarget to 27.0 (DECISIONS.md D4). `--no-install`
+        # skips prebuild's own npm/CocoaPods install so a failure there is
+        # attributable to the explicit `pod install` step below instead.
+        #
+        # Scene-lifecycle finding (verified 2026-09-22 against a local
+        # prebuild of this same app.json/SDK-57 template): the generated
+        # project already includes SceneDelegate.swift and a
+        # UIApplicationSceneManifest in Info.plist, so — unlike some older
+        # bare templates — no manual scene-manifest fix-up is needed for
+        # the app to be launch-capable. (This job only compiles; it does
+        # not boot a simulator or launch the app either way.)
+        run: npx expo prebuild --platform ios --no-install
+
+      - name: pod install
+        working-directory: example/ios
+        run: pod install
+
+      - name: xcodebuild (generic iphonesimulator destination, compile only)
+        working-directory: example/ios
+        run: |
+          xcodebuild \
+            -workspace ondevicellmexample.xcworkspace \
+            -scheme ondevicellmexample \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            build
+
+  # Compile-check the example app for Android (best-effort mirror of the
+  # iOS job; not called out with the same platform-floor caveats since
+  # ubuntu-latest + a pinned JDK/Android SDK combination is not tied to a
+  # yearly OS/Xcode release the way the iOS floor is).
+  example-android:
+    name: example app Android build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build package
+        run: npm run build
+
+      - name: Install example dependencies
+        working-directory: example
+        run: npm ci
+
+      - name: Prebuild Android native project
+        working-directory: example
+        # Regenerates the gitignored example/android/ from app.json.
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('example/android/**/*.gradle*', 'example/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: assembleDebug
+        working-directory: example/android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug
