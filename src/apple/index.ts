@@ -21,11 +21,7 @@
 import { AppleProvider, type AppleProviderConfig } from './provider';
 import type { LLMProvider } from '../core';
 
-export {
-  AppleProvider,
-  DEFAULT_TOOL_CALL_TIMEOUT_MS,
-  type AppleProviderConfig,
-} from './provider';
+export { AppleProvider, DEFAULT_TOOL_CALL_TIMEOUT_MS, type AppleProviderConfig } from './provider';
 export { encodeAppleSchema } from './schema';
 export type {
   AppleNativeModule,

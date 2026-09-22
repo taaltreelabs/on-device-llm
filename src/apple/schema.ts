@@ -26,12 +26,7 @@
  * here: what this *model* can generate is not a portable fact.
  */
 
-import {
-  LLMError,
-  normalizeJsonSchema,
-  type JsonSchema,
-  type SchemaNode,
-} from '../core';
+import { LLMError, normalizeJsonSchema, type JsonSchema, type SchemaNode } from '../core';
 
 /** JSON document, as the native decoder will read it. */
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };

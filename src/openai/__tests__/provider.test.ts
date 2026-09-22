@@ -706,7 +706,11 @@ describe('tool calling: advertised as unsupported, and rejected as such', () => 
       {
         name: 'getWeather',
         description: 'Current weather for a city.',
-        parameters: { type: 'object', properties: { city: { type: 'string' } }, required: ['city'] },
+        parameters: {
+          type: 'object',
+          properties: { city: { type: 'string' } },
+          required: ['city'],
+        },
         execute: () => 'sunny',
       },
     ],

@@ -64,9 +64,7 @@ describe('prewarm', () => {
   it('passes the conversation through and resolves true', async () => {
     const native = new FakeNativeModule();
     const provider = new AppleProvider({}, () => native);
-    await expect(
-      provider.prewarm([{ role: 'user', content: 'Hello' }])
-    ).resolves.toBe(true);
+    await expect(provider.prewarm([{ role: 'user', content: 'Hello' }])).resolves.toBe(true);
     expect(native.calls.prewarm[0]).toEqual([{ role: 'user', content: 'Hello' }]);
   });
 

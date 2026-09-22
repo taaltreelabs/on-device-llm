@@ -99,6 +99,20 @@ function describeError(error: unknown): string {
 }
 
 /**
+ * Start a promise nobody is going to await, swallowing its rejection.
+ *
+ * Tool handlers and bridge replies are deliberately not awaited by the event
+ * loop (that is what lets two tool calls run at once), and an unhandled
+ * rejection from one of them must not take the process down — every failure
+ * that matters is already reported through `resolveToolCall` and the request's
+ * own error path.
+ */
+function runDetached(work: () => Promise<unknown>): void {
+  const noop = (): void => {};
+  work().then(noop, noop);
+}
+
+/**
  * Turn one native stream into an `AsyncGenerator<StreamEvent>`.
  *
  * Terminates when a `finish` event arrives (yielded as `StreamEvent`
@@ -137,7 +151,8 @@ export async function* bridgeNativeStream(
    * original `Error`, and losing it would leave the developer with our
    * paraphrase of their own exception.
    */
-  let toolFailure: { readonly toolName: string; readonly callId: string; readonly error: unknown } | undefined;
+  let toolFailure:
+    { readonly toolName: string; readonly callId: string; readonly error: unknown } | undefined;
 
   const subscription: NativeSubscription = native.addListener(
     'onStreamEvent',
@@ -157,18 +172,13 @@ export async function* bridgeNativeStream(
    * one `resolveToolCall`, and a `false` from it means the call had already
    * timed out or been cancelled — normal, and ignored.
    */
-  const runToolCall = (call: {
-    callId: string;
-    toolName: string;
-    args: unknown;
-  }): void => {
+  const runToolCall = (call: { callId: string; toolName: string; args: unknown }): void => {
     const reply = (resultJson: string | null, errorMessage: string | null): void => {
       const resolveToolCall = native.resolveToolCall?.bind(native);
       if (resolveToolCall === undefined) return;
-      void resolveToolCall(call.callId, resultJson, errorMessage).catch(() => {
-        // The native side may already have abandoned this call, or the module
-        // may be torn down. Either way the request's own error path reports it.
-      });
+      // The native side may already have abandoned this call, or the module may
+      // be torn down. Either way the request's own error path reports it.
+      runDetached(() => resolveToolCall(call.callId, resultJson, errorMessage));
     };
 
     const handler = options.toolHandlers?.get(call.toolName);
@@ -181,7 +191,7 @@ export async function* bridgeNativeStream(
       return;
     }
 
-    void (async () => {
+    runDetached(async () => {
       try {
         const result = await handler({
           callId: call.callId,
@@ -194,7 +204,7 @@ export async function* bridgeNativeStream(
         toolFailure ??= { toolName: call.toolName, callId: call.callId, error };
         reply(null, describeError(error));
       }
-    })();
+    });
   };
 
   const cancelNative = (): void => {

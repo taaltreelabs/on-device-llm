@@ -74,15 +74,16 @@ describe('availability', () => {
 });
 
 describe('capabilities', () => {
-  it('reports what the bridge supports today, not what the model supports', async () => {
+  it('reports what the bridge and the model can both do', async () => {
     await expect(make().capabilities()).resolves.toEqual({
       contextWindow: 8192,
       streaming: true,
-      // Phase 3 steps 5-7 are not built; advertising them would make the
-      // router route toward a provider that is about to fail.
-      structuredOutput: false,
-      tools: false,
-      tokenCounting: 'none',
+      // Steps 5-7 are built, and the model reports `guidedGeneration` and
+      // `toolCalling`. See `steps.test.ts` for the cases where one of the two
+      // says no and the answer flips back to false.
+      structuredOutput: true,
+      tools: true,
+      tokenCounting: 'exact',
       locales: ['en', 'nl', 'fr', 'de', 'es'],
       modelLabel: 'AFM 3 Core Advanced',
     });
@@ -122,8 +123,16 @@ describe('request validation (rejected before crossing the bridge)', () => {
     expect(native.calls.generate).toHaveLength(0);
   };
 
-  it('rejects a schema until structured output lands (step 6)', async () => {
-    await rejects({ ...ask, schema: { type: 'object' } }, /structured output/i);
+  it('rejects a schema whose constraints the model cannot honour', async () => {
+    // A supported schema goes through (steps.test.ts covers the happy path);
+    // what is rejected is the constraint that would be silently dropped.
+    await rejects(
+      {
+        ...ask,
+        schema: { type: 'object', properties: { a: { type: 'string', format: 'email' } } },
+      },
+      /`format`/
+    );
   });
 
   it('rejects an empty message list', async () => {
@@ -185,6 +194,8 @@ describe('generate', () => {
       expect.stringMatching(/^apple-/),
       [{ role: 'user', content: 'hi' }],
       0.3,
+      null,
+      // No schema on this request.
       null,
     ]);
   });

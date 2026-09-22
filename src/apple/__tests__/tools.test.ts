@@ -39,7 +39,11 @@ async function withDeadline<T>(promise: Promise<T>, label: string, timeoutMs = 1
   }
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (error: unknown) => void } {
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error: unknown) => void;
+} {
   let resolve!: (value: T) => void;
   let reject!: (error: unknown) => void;
   const promise = new Promise<T>((res, rej) => {
@@ -229,9 +233,7 @@ describe('tool calling over the bridge', () => {
     const provider = new AppleProvider({ toolCallTimeoutMs: 50 }, () => native);
     const never = deferred<string>();
 
-    const iterator = provider
-      .stream(weatherRequest(() => never.promise))
-      [Symbol.asyncIterator]();
+    const iterator = provider.stream(weatherRequest(() => never.promise))[Symbol.asyncIterator]();
     const first = iterator.next();
     await withDeadline(native.startStreamCalled, 'startStream');
     expect(native.calls.startStream[0]![6]).toBe(50);
@@ -315,9 +317,7 @@ describe('tool calling over the bridge', () => {
     await until(() => native.calls.resolveToolCall.length === 1, 'the late reply');
     // The fake cleared its open calls on cancel, so the reply is refused —
     // which is exactly what the native registry does, and it must not throw.
-    await expect(
-      native.resolveToolCall('c', 'too late', null)
-    ).resolves.toBe(false);
+    await expect(native.resolveToolCall('c', 'too late', null)).resolves.toBe(false);
   });
 
   it('runs two concurrent calls independently, keyed by callId', async () => {
@@ -345,7 +345,11 @@ describe('tool calling over the bridge', () => {
     const first = iterator.next();
     await withDeadline(native.startStreamCalled, 'startStream');
 
-    native.emitToolCall({ callId: 'a', toolName: 'getWeather', argumentsJson: '{"city":"Utrecht"}' });
+    native.emitToolCall({
+      callId: 'a',
+      toolName: 'getWeather',
+      argumentsJson: '{"city":"Utrecht"}',
+    });
     native.emitToolCall({ callId: 'b', toolName: 'getWeather', argumentsJson: '{"city":"Delft"}' });
     await withDeadline(first, 'first toolCall event');
     const second = await withDeadline(iterator.next(), 'second toolCall event');
@@ -377,9 +381,7 @@ describe('tool calling over the bridge', () => {
       .stream(
         {
           messages: [{ role: 'user', content: 'weather?' }],
-          tools: [
-            { name: 'getWeather', description: 'weather', parameters: weatherParameters },
-          ],
+          tools: [{ name: 'getWeather', description: 'weather', parameters: weatherParameters }],
         },
         {
           onToolCall: (call) => {

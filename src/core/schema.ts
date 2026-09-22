@@ -25,12 +25,7 @@ import { LLMError } from './errors';
 import type { JsonSchema } from './generation';
 
 /** A validated schema node. The `kind` discriminant is the provider's switch. */
-export type SchemaNode =
-  | ObjectNode
-  | ArrayNode
-  | StringNode
-  | NumberNode
-  | BooleanNode;
+export type SchemaNode = ObjectNode | ArrayNode | StringNode | NumberNode | BooleanNode;
 
 /** One property of an {@link ObjectNode}. */
 export interface SchemaProperty {
@@ -430,7 +425,11 @@ function normalizeArray(node: JsonSchema, context: Context): ArrayNode {
   const minItems = integerKeyword(node, 'minItems', context);
   const maxItems = integerKeyword(node, 'maxItems', context);
   if (minItems !== undefined && maxItems !== undefined && minItems > maxItems) {
-    fail(context.path, `\`minItems\` (${minItems}) exceeds \`maxItems\` (${maxItems})`, context.providerId);
+    fail(
+      context.path,
+      `\`minItems\` (${minItems}) exceeds \`maxItems\` (${maxItems})`,
+      context.providerId
+    );
   }
 
   return {
