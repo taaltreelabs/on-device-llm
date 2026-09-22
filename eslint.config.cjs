@@ -59,9 +59,53 @@ const isolationOverride = {
   },
 };
 
+// The `.../react` isolation rule (docs/plan.md §2): this subpath may import
+// `react` only. `react-native` and `expo`/`expo-*` are forbidden here too —
+// the plan doesn't mandate a bare-Node import test for `react` the way it
+// does for `core`/`openai` (React itself isn't Node-importable), but the
+// same mechanical ESLint enforcement keeps the rule from depending on
+// anyone remembering it by hand. Unlike the `core`/`openai` override above,
+// `react` itself is *not* in `isolationForbidden` here — that's the whole
+// point of this subpath.
+const reactIsolationOverride = {
+  files: ['src/react/**/*.{ts,tsx}'],
+  rules: {
+    'no-restricted-imports': [
+      'error',
+      {
+        paths: [
+          {
+            name: 'react-native',
+            message: 'src/react may import react only (see docs/plan.md §2).',
+          },
+        ],
+        patterns: [
+          {
+            group: ['react-native/*', 'expo', 'expo-*', 'expo/*'],
+            message: 'src/react may import react only (see docs/plan.md §2).',
+          },
+        ],
+      },
+    ],
+    'no-restricted-modules': [
+      'error',
+      {
+        paths: [
+          {
+            name: 'react-native',
+            message: 'src/react may import react only (see docs/plan.md §2).',
+          },
+        ],
+        patterns: ['react-native/*', 'expo', 'expo-*', 'expo/*'],
+      },
+    ],
+  },
+};
+
 module.exports = defineConfig([
   { ignores: ['build'] },
   ...universe,
   ...universeWeb,
   isolationOverride,
+  reactIsolationOverride,
 ]);
