@@ -9,6 +9,7 @@ import {
   LLMError,
   MockProvider,
   UNKNOWN,
+  createRouter,
   estimateTokens,
   isUnknown,
   normalizeContextWindow,
@@ -28,13 +29,15 @@ import {
 import * as core from '../index';
 
 describe('core public API', () => {
-  it('exports the runtime surface Phases 1-3 promise, and no default export', () => {
+  it('exports the runtime surface Phases 1-4 promise, and no default export', () => {
     expect(Object.keys(core).sort()).toEqual([
       'DEFAULT_CHARS_PER_TOKEN',
+      'DEFAULT_FALLBACK_TRIGGERS',
       'DEFAULT_KEEP_RECENT_TURNS',
       'DEFAULT_MAX_SUMMARY_TOKENS',
       'DEFAULT_PER_MESSAGE_OVERHEAD_TOKENS',
       'DEFAULT_RESERVED_FOR_OUTPUT_TOKENS',
+      'DEFAULT_ROUTE_CACHE_TTL_MS',
       'DEFAULT_SAFETY_MARGIN_ESTIMATED_TOKENS',
       'DEFAULT_SAFETY_MARGIN_EXACT_TOKENS',
       'DEFAULT_SUMMARY_MARKER',
@@ -48,6 +51,7 @@ describe('core public API', () => {
       'applySystemState',
       'computeContextBudget',
       'createMeasure',
+      'createRouter',
       'createSummaryMessage',
       'defaultSummaryPrompt',
       'estimateTokens',
@@ -175,8 +179,26 @@ describe('type-level contracts', () => {
     });
     await expect(provider.countTokens?.(messages)).resolves.toBeGreaterThan(0);
 
-    // A router (Phase 4) will hold providers side by side through this type.
+    // A router (Phase 4) holds providers side by side through this type.
     const providers: LLMProvider[] = [provider, new MockProvider()];
     expect(providers.map((candidate) => candidate.id)).toEqual(['echo', 'mock']);
+  });
+
+  it('makes a router an ordinary LLMProvider, composable with itself', async () => {
+    const inner: LLMProvider = createRouter({
+      id: 'inner',
+      providers: [new MockProvider({ id: 'mock', turns: [{ type: 'result', text: 'hoi' }] })],
+    });
+    const outer: LLMProvider = createRouter({ providers: [inner] });
+    // The task tag rides on GenerateRequest (DECISIONS.md D29) and providers
+    // that do not route on it simply ignore it.
+    const tagged: GenerateRequest = {
+      messages: [{ role: 'user', content: 'hoi' }],
+      taskTag: 'simple',
+    };
+    await expect(outer.generate(tagged)).resolves.toMatchObject({
+      text: 'hoi',
+      providerId: 'mock',
+    });
   });
 });

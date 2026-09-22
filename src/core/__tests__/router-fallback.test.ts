@@ -28,12 +28,24 @@ const TRIGGERS: readonly {
   readonly details: LLMErrorDetails;
   readonly defaultOn: boolean;
 }[] = [
-  { name: 'unavailable', details: { code: 'unavailable', reason: 'modelNotReady' }, defaultOn: true },
-  { name: 'contextOverflow', details: { code: 'contextOverflow', tokenCount: 9000 }, defaultOn: true },
+  {
+    name: 'unavailable',
+    details: { code: 'unavailable', reason: 'modelNotReady' },
+    defaultOn: true,
+  },
+  {
+    name: 'contextOverflow',
+    details: { code: 'contextOverflow', tokenCount: 9000 },
+    defaultOn: true,
+  },
   { name: 'network', details: { code: 'network', status: 503 }, defaultOn: true },
   { name: 'rateLimited', details: { code: 'rateLimited' }, defaultOn: true },
   { name: 'guardrail', details: { code: 'guardrail' }, defaultOn: false },
-  { name: 'unsupportedLocale', details: { code: 'unsupportedLocale', locale: 'pl' }, defaultOn: true },
+  {
+    name: 'unsupportedLocale',
+    details: { code: 'unsupportedLocale', locale: 'pl' },
+    defaultOn: true,
+  },
   { name: 'unknownTransient', details: { code: 'unknown', transient: true }, defaultOn: true },
   { name: 'unknown', details: { code: 'unknown', transient: false }, defaultOn: false },
 ];

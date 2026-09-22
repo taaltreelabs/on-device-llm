@@ -135,6 +135,11 @@ const OPAQUE_ROUTER_CAPABILITIES: Capabilities = {
   locales: UNKNOWN,
 };
 
+/** The providers the plan is willing to ask, in the order it will ask them. */
+function eligible(order: readonly RouteEligibility[]): readonly RouteEligibility[] {
+  return order.filter((entry) => entry.skip === undefined);
+}
+
 function invalid(message: string): LLMError {
   return new LLMError({ code: 'invalidRequest' }, { message });
 }
@@ -342,8 +347,25 @@ export function createRouter(config: RouterConfig): LLMProvider {
       this.why = why;
     }
 
-    skip(providerId: string, reason: RouteSkipReason): void {
-      this.attempts.push({ providerId, outcome: `skipped:${reason}`, durationMs: 0 });
+    /**
+     * Record every provider the policy passed over, before anything is tried.
+     *
+     * Up front rather than as the chain walks past them, because the walk
+     * stops at the first provider that answers — and "the on-device model was
+     * skipped because the conversation outgrew its window" is *exactly* the
+     * telemetry an app wants on the requests that then succeeded in the cloud.
+     * So `attempts` reads: everything passed over (in configured order), then
+     * everything asked (in the order it was asked).
+     */
+    recordSkips(order: readonly RouteEligibility[]): void {
+      for (const entry of order) {
+        if (entry.skip === undefined) continue;
+        this.attempts.push({
+          providerId: entry.candidate.id,
+          outcome: `skipped:${entry.skip}`,
+          durationMs: 0,
+        });
+      }
     }
 
     /** Call immediately before asking a provider. Returns the start timestamp. */
@@ -386,11 +408,8 @@ export function createRouter(config: RouterConfig): LLMProvider {
     let lastError: LLMError | undefined;
 
     try {
-      for (const entry of plan.order) {
-        if (entry.skip !== undefined) {
-          chain.skip(entry.candidate.id, entry.skip);
-          continue;
-        }
+      chain.recordSkips(plan.order);
+      for (const entry of eligible(plan.order)) {
         throwIfAborted(options?.signal);
         const startedAt = chain.begin(entry.candidate.id);
         try {
@@ -435,11 +454,8 @@ export function createRouter(config: RouterConfig): LLMProvider {
     let inFlight: { providerId: string; startedAt: number } | undefined;
 
     try {
-      for (const entry of plan.order) {
-        if (entry.skip !== undefined) {
-          chain.skip(entry.candidate.id, entry.skip);
-          continue;
-        }
+      chain.recordSkips(plan.order);
+      for (const entry of eligible(plan.order)) {
         throwIfAborted(options?.signal);
         const startedAt = chain.begin(entry.candidate.id);
         inFlight = { providerId: entry.candidate.id, startedAt };
