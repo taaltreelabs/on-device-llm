@@ -33,9 +33,11 @@ import {
   type Capabilities,
   type GenerateRequest,
   type GenerateResult,
+  type JsonSchema,
   type LLMProvider,
   type RequestOptions,
   type StreamEvent,
+  type ToolDefinition,
 } from '@taaltreelabs/on-device-llm/core';
 
 export type ProviderKind = 'mock' | 'apple';
@@ -85,6 +87,169 @@ export function scriptMockReply(request: GenerateRequest): void {
   mockProvider.script({
     type: 'stream',
     chunks: scriptedReplyChunks(lastUserMessage?.content ?? ''),
+  });
+}
+
+/**
+ * Fixed prompt for the structured-output demo (`App.tsx`'s "JSON demo"
+ * button). Deliberately unrelated to the running chat -- the demo is about
+ * one schema-shaped turn, not conversation context.
+ */
+export const JSON_DEMO_PROMPT = 'Invent a plausible weather report for Amsterdam as JSON.';
+
+/**
+ * Schema for the structured-output demo. Kept inside the subset the Apple
+ * provider's `normalizeJsonSchema`/`encodeAppleSchema` can decode
+ * (docs/plan.md §5 Phase 3 step 6, src/core/schema.ts): an object with a
+ * string, a ranged number, a string enum, and an optional bounded array of
+ * strings.
+ */
+export const JSON_DEMO_SCHEMA: JsonSchema = {
+  type: 'object',
+  title: 'WeatherReport',
+  properties: {
+    city: { type: 'string' },
+    tempC: { type: 'number', minimum: -40, maximum: 45 },
+    conditions: { type: 'string', enum: ['sunny', 'rainy', 'cloudy', 'snowy'] },
+    alerts: { type: 'array', items: { type: 'string' }, maxItems: 3 },
+  },
+  required: ['city', 'tempC', 'conditions'],
+  additionalProperties: false,
+};
+
+const WEATHER_CONDITIONS = ['sunny', 'rainy', 'cloudy', 'snowy'] as const;
+
+/** Result of {@link checkWeatherReport}. */
+export interface ConformanceCheck {
+  readonly pass: boolean;
+  readonly reasons: readonly string[];
+}
+
+/**
+ * Hand-rolled conformance check against `JSON_DEMO_SCHEMA` -- keys, types,
+ * and the enum. Not a JSON Schema validator (no library, per the example
+ * app's no-new-dependencies rule); just enough to catch a model that skipped
+ * a required field, used the wrong type, or invented a condition outside the
+ * enum.
+ */
+export function checkWeatherReport(value: unknown): ConformanceCheck {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { pass: false, reasons: ['expected a JSON object'] };
+  }
+  const report = value as Record<string, unknown>;
+  const reasons: string[] = [];
+
+  if (typeof report['city'] !== 'string' || report['city'].trim() === '') {
+    reasons.push('"city" must be a non-empty string');
+  }
+  const tempC = report['tempC'];
+  if (typeof tempC !== 'number' || !Number.isFinite(tempC) || tempC < -40 || tempC > 45) {
+    reasons.push('"tempC" must be a number between -40 and 45');
+  }
+  const conditions = report['conditions'];
+  if (
+    typeof conditions !== 'string' ||
+    !WEATHER_CONDITIONS.includes(conditions as (typeof WEATHER_CONDITIONS)[number])
+  ) {
+    reasons.push(`"conditions" must be one of ${WEATHER_CONDITIONS.join(', ')}`);
+  }
+  const alerts = report['alerts'];
+  if (
+    alerts !== undefined &&
+    (!Array.isArray(alerts) ||
+      alerts.length > 3 ||
+      alerts.some((entry) => typeof entry !== 'string'))
+  ) {
+    reasons.push('"alerts", if present, must be an array of at most 3 strings');
+  }
+
+  return { pass: reasons.length === 0, reasons };
+}
+
+/**
+ * Queue a scripted object turn for `mockProvider`'s JSON demo run.
+ * `MockProvider` never evaluates `GenerateRequest.schema` -- it only ever
+ * replays what a turn scripts -- so this stands in for what a real
+ * structured-output provider would produce for `JSON_DEMO_PROMPT`, matching
+ * `JSON_DEMO_SCHEMA`.
+ */
+export function scriptMockWeatherReply(): void {
+  mockProvider.script({
+    type: 'stream',
+    chunks: [],
+    object: {
+      city: 'Amsterdam',
+      tempC: 14,
+      conditions: 'cloudy',
+      alerts: ['Gale warning tonight'],
+    },
+  });
+}
+
+/** Fixed prompt for the tool round-trip demo (`App.tsx`'s "Tool demo" button). */
+export const TOOL_DEMO_PROMPT = 'Check the battery and tell me if I should charge soon.';
+
+/** What the fake battery sensor reports. */
+export interface BatteryReading {
+  readonly level: number;
+  readonly state: 'charging' | 'unplugged';
+}
+
+/**
+ * Fake in-JS "sensor" the battery tool calls. No native module and no new
+ * dependency (a real battery read would need `expo-battery`) -- the point of
+ * the demo is an honest JS round trip, not a real sensor.
+ */
+export async function readFakeBatterySensor(): Promise<BatteryReading> {
+  await new Promise<void>((resolve) => setTimeout(resolve, 300));
+  const level = Math.min(1, Math.max(0, 0.42 + (Math.random() - 0.5) * 0.08));
+  const state: BatteryReading['state'] = Math.random() < 0.7 ? 'charging' : 'unplugged';
+  return { level: Number(level.toFixed(2)), state };
+}
+
+/**
+ * The one tool the demo request carries. `execute` really runs the fake
+ * sensor above (with its 300ms delay) -- there is nothing scripted about the
+ * tool call itself, only about what `mockProvider` does with the result (see
+ * {@link scriptMockBatteryReply}).
+ */
+export function makeBatteryTool(): ToolDefinition {
+  return {
+    name: 'getBatteryLevel',
+    description: 'Reads the current battery level (0 to 1) and charging state from the device.',
+    parameters: {
+      type: 'object',
+      title: 'GetBatteryLevelArgs',
+      properties: {},
+      additionalProperties: false,
+    },
+    execute: async () => readFakeBatterySensor(),
+  };
+}
+
+/** Compose the reply text once the battery reading is known, so both the real and scripted paths can show an answer that actually depends on it. */
+export function describeBatteryReading(reading: BatteryReading): string {
+  const percent = Math.round(reading.level * 100);
+  if (reading.state === 'charging') {
+    return `Battery is at ${percent}% and already charging, so there's nothing else to do.`;
+  }
+  return percent < 30
+    ? `Battery is at ${percent}% and not charging -- you should plug in soon.`
+    : `Battery is at ${percent}% and not charging, but that's comfortably enough for now.`;
+}
+
+/**
+ * Queue a scripted reply for `mockProvider`'s tool demo run, once the
+ * battery reading is known. `MockProvider` reports `capabilities().tools ===
+ * false` and never calls `ToolDefinition.execute` itself -- `App.tsx` runs
+ * it directly and passes the result here so the scripted text still depends
+ * on it, the same way a real provider's final answer would.
+ */
+export function scriptMockBatteryReply(reading: BatteryReading): void {
+  const reply = describeBatteryReading(reading);
+  mockProvider.script({
+    type: 'stream',
+    chunks: reply.split(' ').map((word, index) => (index === 0 ? word : ` ${word}`)),
   });
 }
 
