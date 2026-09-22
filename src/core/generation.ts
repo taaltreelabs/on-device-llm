@@ -156,6 +156,25 @@ export interface GenerateRequest {
    * Phase 2 context manager reserves output space out of the same window.
    */
   readonly maxOutputTokens?: number;
+  /**
+   * What kind of work this is — `'simple'`, `'reasoning'`, `'translate'`,
+   * whatever vocabulary your app routes on.
+   *
+   * **Read by the Phase 4 router only. Every provider must ignore it**, and in
+   * particular must not reject a request for carrying one: it is routing
+   * metadata, not a generation parameter, and a request that has been routed
+   * arrives at its provider with the tag still attached.
+   *
+   * It lives here rather than on `RequestOptions` (DECISIONS.md D29) because it
+   * describes the *ask*, not the call: it is plain serializable data that
+   * belongs with the messages when a request is stored, replayed, or handed
+   * down through the context manager and the hooks, whereas `RequestOptions`
+   * carries the things that cannot be serialized and change on every
+   * invocation — an `AbortSignal` and a tool dispatcher. It stays off
+   * `Message` for the same reason inverted: a tag describes the whole request,
+   * not one turn of the conversation.
+   */
+  readonly taskTag?: string;
 }
 
 /**

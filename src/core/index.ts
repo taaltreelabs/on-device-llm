@@ -154,6 +154,30 @@ export {
   type MockTurn,
 } from './mock-provider';
 export type { LLMProvider, RequestOptions } from './provider';
+export {
+  createRouter,
+  DEFAULT_FALLBACK_TRIGGERS,
+  DEFAULT_ROUTE_CACHE_TTL_MS,
+  type FallbackTriggers,
+  type OnRoute,
+  type RouteAttempt,
+  type RouteCandidate,
+  type RouteEligibility,
+  type RouteOutcome,
+  type RoutePlan,
+  type RoutePolicy,
+  type RoutePolicyContext,
+  type RoutePolicyFunction,
+  type RoutePolicyRules,
+  type RoutePredicate,
+  type RouteReason,
+  type RouteReport,
+  type RouteRequirements,
+  type RouterConfig,
+  type RouteSkipReason,
+  type RouteTagRule,
+  type RouteTokenSource,
+} from './router';
 export type {
   FinishEvent,
   ObjectSnapshotEvent,
