@@ -10,22 +10,25 @@
  *
  * - `'mock'` -- a scripted `MockProvider` (core) that echoes back a canned,
  *   streamed reply for every turn. Always available, no device or network
- *   required, so the chat screen is fully exercisable today. Default.
- * - `'apple'` -- `createAppleProvider()` from the package's `/apple`
- *   subpath, imported exactly as a real consumer would:
- *   `import { createAppleProvider } from '@taaltreelabs/on-device-llm/apple'`.
- *   Phase 3 (the Swift module in `ios/` and the factory in `src/apple`) is
- *   being built concurrently with this example app. If `createAppleProvider`
- *   has not landed yet, calling it throws (or resolves to `undefined` via
- *   CommonJS interop) and `getAppleProvider()` below falls back to a
- *   `PendingAppleProvider` stand-in that reports itself `unavailable` rather
- *   than crashing the toggle.
+ *   required, so the chat screen is fully exercisable today.
+ * - `'router'` -- `createRouter()` (Phase 4, core) over two providers, in
+ *   fallback order: the Apple provider (`createAppleProvider()` from the
+ *   package's `/apple` subpath, wrapped by {@link simulateUnavailable} so the
+ *   example app's switch can force it out of the running) then `cloud-fm`
+ *   (`createOpenAIProvider()` from `/openai`, pointed at `fm serve` on the
+ *   development Mac). Default. If `createAppleProvider` has not landed yet,
+ *   calling it throws (or resolves to `undefined` via CommonJS interop) and
+ *   `getAppleProvider()` below falls back to a `PendingAppleProvider`
+ *   stand-in that reports itself `unavailable` rather than crashing the
+ *   toggle -- the router falls back past it exactly as it would past a real
+ *   Apple provider that is not ready yet.
  */
 // Real consumer import of the Phase 3 factory. May not exist yet -- see the
 // module doc above and the "Metro subpath-exports verification" section of
 // the example app's build report.
 import { createAppleProvider } from '@taaltreelabs/on-device-llm/apple';
 import {
+  createRouter,
   LLMError,
   MockProvider,
   UNKNOWN,
@@ -35,12 +38,21 @@ import {
   type GenerateResult,
   type JsonSchema,
   type LLMProvider,
+  type OnRoute,
   type RequestOptions,
   type StreamEvent,
   type ToolDefinition,
 } from '@taaltreelabs/on-device-llm/core';
+// `createOpenAIProvider`'s injectable `fetch` is the documented seam for real
+// token-by-token streaming in Expo (docs/research/ecosystem.md §3): bare RN's
+// built-in `fetch` has no readable-stream body, so without this the cloud leg
+// would silently degrade to one aggregated `textDelta` per turn.
+import { createOpenAIProvider } from '@taaltreelabs/on-device-llm/openai';
+import { fetch as expoFetch } from 'expo/fetch';
+import Constants from 'expo-constants';
+import { NativeModules } from 'react-native';
 
-export type ProviderKind = 'mock' | 'apple';
+export type ProviderKind = 'mock' | 'router';
 
 /**
  * Deliberately small: makes `fitContext` + `slidingWindow` (wired in
@@ -60,7 +72,7 @@ export const DEMO_SAFETY_MARGIN_TOKENS = 32;
 function scriptedReplyChunks(userText: string): readonly string[] {
   const reply =
     `You said: "${userText}". This is the scripted MockProvider talking -- ` +
-    'flip the toggle above to "Apple" to exercise the on-device provider instead.';
+    'flip the toggle above to "Router" to exercise the real providers instead.';
   return reply.split(' ').map((word, index) => (index === 0 ? word : ` ${word}`));
 }
 
@@ -317,7 +329,165 @@ export function getAppleProvider(): LLMProvider {
   return resolved;
 }
 
+/**
+ * Mutable flag the router's wrapped Apple provider (see
+ * {@link simulateUnavailable}) reads on every call -- a plain object, not a
+ * React ref, so `App.tsx`'s "simulate on-device unavailable" `Switch` can
+ * flip it straight from an event handler with no re-render required to take
+ * effect and no risk of tripping `react-hooks/refs` (that rule polices
+ * `useRef`, not an ordinary exported mutable). Flipping it never rebuilds
+ * `router` below; the *next* `generate()`/`stream()` call just reads a
+ * different value (Phase 4 acceptance mechanism, docs/plan.md §5).
+ */
+export const simulateUnavailableFlag: { current: boolean } = { current: false };
+
+/**
+ * Wrap `inner` so it reports and behaves `unavailable` whenever `isOn()` is
+ * true, and delegates verbatim otherwise (Phase 4 acceptance mechanism,
+ * docs/plan.md §5: "toggling a 'simulate unavailable' switch moves the
+ * conversation to the cloud provider on the next turn with history intact").
+ *
+ * `isOn` is a function, not a captured boolean, so flipping
+ * {@link simulateUnavailableFlag} takes effect on the very next call without
+ * this wrapper -- or the router built around it -- ever needing to be
+ * rebuilt.
+ */
+export function simulateUnavailable(inner: LLMProvider, isOn: () => boolean): LLMProvider {
+  const simulatedError = (): LLMError =>
+    new LLMError(
+      { code: 'unavailable', reason: 'modelNotReady' },
+      { providerId: inner.id, message: 'simulated' }
+    );
+
+  const wrapped: LLMProvider = {
+    id: inner.id,
+    async availability(): Promise<Availability> {
+      if (isOn()) return { available: false, reason: 'modelNotReady', detail: 'simulated' };
+      return inner.availability();
+    },
+    // Capabilities are reported verbatim even while simulated-unavailable --
+    // the router's own `capabilities()` only ever asks the *preferred
+    // available* provider (src/core/router/router.ts), so this never misleads
+    // a caller into budgeting against a provider it cannot reach.
+    async capabilities(): Promise<Capabilities> {
+      return inner.capabilities();
+    },
+    async generate(request: GenerateRequest, options?: RequestOptions): Promise<GenerateResult> {
+      if (isOn()) throw simulatedError();
+      return inner.generate(request, options);
+    },
+    stream(request: GenerateRequest, options?: RequestOptions): AsyncIterable<StreamEvent> {
+      if (isOn()) {
+        const error = simulatedError();
+        // Deferred throw (only on first `.next()`), matching every real
+        // provider's `stream()` contract -- the async generator function
+        // itself must not throw synchronously at call time.
+        return (async function* (): AsyncGenerator<StreamEvent, void, undefined> {
+          throw error;
+        })();
+      }
+      return inner.stream(request, options);
+    },
+  };
+  if (inner.countTokens !== undefined) {
+    wrapped.countTokens = (messages) => inner.countTokens!(messages);
+  }
+  if (inner.prewarm !== undefined) {
+    wrapped.prewarm = (messages) => inner.prewarm!(messages);
+  }
+  return wrapped;
+}
+
+/**
+ * Best-effort LAN IP for the Mac running `expo start`, so the device/simulator
+ * can reach `fm serve` on that same machine.
+ *
+ * `Constants.expoConfig?.hostUri` (e.g. `"192.168.1.23:8081"`) is the
+ * documented, stable source (expo-constants -- a transitive dependency of
+ * `expo`, resolvable through Metro's/TypeScript's normal node_modules walk
+ * even though it is not in `example/package.json` directly). Falls back to
+ * parsing `NativeModules.SourceCode.scriptURL` (e.g.
+ * `"http://192.168.1.23:8081/index.bundle?..."`) for the rare case
+ * `hostUri` is unset.
+ */
+export function resolveDevHost(): string | undefined {
+  const hostUri = Constants.expoConfig?.hostUri;
+  if (typeof hostUri === 'string' && hostUri.length > 0) {
+    const host = hostUri.split(':')[0];
+    if (host !== undefined && host.length > 0) return host;
+  }
+  const scriptUrl = (NativeModules as { SourceCode?: { scriptURL?: string } }).SourceCode
+    ?.scriptURL;
+  if (typeof scriptUrl === 'string') {
+    const match = /^https?:\/\/([^/:]+)/.exec(scriptUrl);
+    if (match?.[1] !== undefined) return match[1];
+  }
+  return undefined;
+}
+
+/** Port `fm serve` listens on during development (docs/plan.md §5 Phase 1/4). */
+export const FM_SERVE_PORT = 1976;
+
+let cloudFmProvider: LLMProvider | undefined;
+
+/**
+ * The cloud fallback: `fm serve` on the development Mac, reached over the
+ * same LAN Metro is already using. `fetch` is injected from `expo/fetch` so
+ * `stream()` gets real token-by-token delivery (see the import comment
+ * above) rather than bare RN's built-in `fetch`, which has no readable-stream
+ * body.
+ */
+export function getCloudFmProvider(): LLMProvider {
+  if (cloudFmProvider !== undefined) return cloudFmProvider;
+  const host = resolveDevHost() ?? '127.0.0.1';
+  cloudFmProvider = createOpenAIProvider({
+    baseUrl: `http://${host}:${FM_SERVE_PORT}/v1`,
+    model: 'system',
+    fetch: expoFetch as unknown as typeof fetch,
+    contextWindow: 8192,
+    id: 'cloud-fm',
+  });
+  return cloudFmProvider;
+}
+
+/**
+ * The router's only subscriber, if any -- `App.tsx` registers/unregisters
+ * this from a `useEffect` (never from render, so there is nothing here for
+ * `react-hooks/refs` to flag) so it can caption each assistant bubble with
+ * which provider actually answered. Indirected through a stable dispatcher
+ * function (below) rather than reaching into `router`'s config directly,
+ * since `createRouter`'s `onRoute` cannot be swapped after construction.
+ */
+let onRouteListener: OnRoute | undefined;
+
+/** Register (or, with `undefined`, unregister) the one `onRoute` listener. Call from an effect. */
+export function setOnRouteListener(listener: OnRoute | undefined): void {
+  onRouteListener = listener;
+}
+
+let router: LLMProvider | undefined;
+
+/**
+ * The active provider for the `'router'` toggle position: the Apple provider
+ * (wrapped so the "simulate unavailable" switch can force it out of the
+ * running), then `cloud-fm`. `onRoute` is the router's only content-free
+ * telemetry seam (src/core/router/router.ts); it dispatches to whichever
+ * listener `setOnRouteListener` most recently registered.
+ */
+export function getRouter(): LLMProvider {
+  if (router !== undefined) return router;
+  router = createRouter({
+    id: 'router',
+    providers: [
+      simulateUnavailable(getAppleProvider(), () => simulateUnavailableFlag.current),
+      getCloudFmProvider(),
+    ],
+    onRoute: (report) => onRouteListener?.(report),
+  });
+  return router;
+}
+
 /** The active `LLMProvider` for a toggle position. Build the UI against its return type (`LLMProvider`) only. */
 export function resolveProvider(kind: ProviderKind): LLMProvider {
-  return kind === 'mock' ? mockProvider : getAppleProvider();
+  return kind === 'mock' ? mockProvider : getRouter();
 }

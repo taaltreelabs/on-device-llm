@@ -1,33 +1,38 @@
 /**
  * Manual test rig for `@taaltreelabs/on-device-llm`.
  *
- * A single chat screen, built purely against the `LLMProvider` interface
- * from `@taaltreelabs/on-device-llm/core` (see `./providers.ts` for the
- * swap seam). Nothing here assumes which concrete provider is behind the
- * toggle -- the same code path drives the scripted `MockProvider` today and
- * the Apple provider once Phase 3 lands.
+ * A single chat screen, built against the package's own public surface: the
+ * chat loop is `useChat` (`@taaltreelabs/on-device-llm/react`), the
+ * availability panel is `useAvailability`, and the two one-shot demos are
+ * `useGenerate` -- all imported exactly as a real consumer would. `./providers.ts`
+ * is still the only place that picks a concrete provider for the toggle.
  *
- * This screen is the maintainer's checkpoint for Phase 3 (docs/plan.md §5):
- * chat, stream, cancel, and an availability/capabilities panel that renders
- * verbatim what the provider reports on-device.
+ * This screen is the maintainer's checkpoint for Phase 4 (docs/plan.md §5):
+ * a router in front of the chat (Apple, falling back to a cloud provider),
+ * a "simulate on-device unavailable" switch that forces that fallback on the
+ * next turn with conversation history intact, and `onRoute` surfaced on
+ * screen rather than only in a log.
  */
-import {
-  fitContext,
-  toLLMError,
-  type Availability,
-  type Capabilities,
-  type GenerateRequest,
-  type LLMProvider,
-  type Message,
+import type {
+  Availability,
+  Capabilities,
+  LLMProvider,
+  Message,
+  OnRoute,
+  RouteReport,
+  ToolDefinition,
 } from '@taaltreelabs/on-device-llm/core';
+import { useAvailability, useChat, useGenerate } from '@taaltreelabs/on-device-llm/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Button,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -47,433 +52,208 @@ import {
   scriptMockBatteryReply,
   scriptMockReply,
   scriptMockWeatherReply,
+  setOnRouteListener,
+  simulateUnavailableFlag,
   TOOL_DEMO_PROMPT,
   type BatteryReading,
   type ProviderKind,
 } from './providers';
 
-interface ChatMessage {
-  readonly id: string;
-  readonly role: 'user' | 'assistant' | 'tool';
-  readonly content: string;
-  readonly streaming: boolean;
-  /** Assistant messages from the JSON demo render as pretty-printed JSON in a distinct bubble style. */
-  readonly variant?: 'object';
-  /** PASS/FAIL line shown under an `object`-variant bubble, once the demo's conformance check has run. */
-  readonly footer?: string;
-}
-
-interface ChatError {
-  readonly code: string;
-  readonly message: string;
-}
-
-interface ContextDebugInfo {
-  readonly sentCount: number;
-  readonly historyCount: number;
-  readonly droppedCount: number;
-}
-
-/** `Availability`/`Capabilities` panel state: not-yet-fetched, or a result. Loading is tracked separately (`isCheckingAvailability`). */
-type PanelState<T> = { readonly status: 'idle' } | { readonly status: 'ready'; readonly value: T };
-
-let nextMessageId = 0;
-function makeMessageId(): string {
-  nextMessageId += 1;
-  return `msg-${nextMessageId}`;
-}
-
-/** Result of checking a provider's status. A plain data fetch -- no `setState` -- so it is safe to call from a `useEffect`. */
-type ProviderStatusResult =
-  | { readonly ok: true; readonly availability: Availability; readonly capabilities: Capabilities }
-  | { readonly ok: false; readonly error: ChatError };
-
-async function fetchProviderStatus(provider: LLMProvider): Promise<ProviderStatusResult> {
-  try {
-    const [availability, capabilities] = await Promise.all([
-      provider.availability(),
-      provider.capabilities(),
-    ]);
-    return { ok: true, availability, capabilities };
-  } catch (thrown) {
-    const llmError = toLLMError(thrown, { providerId: provider.id });
-    return { ok: false, error: { code: llmError.code, message: llmError.message } };
-  }
+/** Caption shown under an assistant bubble once its turn's `onRoute` report has arrived, keyed to `useChat().messages`'s index. */
+function routeCaption(report: RouteReport): string {
+  if (report.providerId === undefined) return 'no provider answered';
+  return `via ${report.providerId}${report.fellBack ? ' (fell back)' : ''}`;
 }
 
 export default function App() {
-  const [providerKind, setProviderKind] = useState<ProviderKind>('mock');
-  const provider = useMemo(() => resolveProvider(providerKind), [providerKind]);
+  const [providerKind, setProviderKind] = useState<ProviderKind>('router');
 
-  const [messages, setMessages] = useState<readonly ChatMessage[]>([]);
-  const [inputText, setInputText] = useState('');
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [error, setError] = useState<ChatError | undefined>(undefined);
-  const [contextDebug, setContextDebug] = useState<ContextDebugInfo | undefined>(undefined);
+  // The "simulate on-device unavailable" switch. `simulateUnavailableFlag`
+  // (providers.ts) is a plain mutable object, not a `useRef` -- the router's
+  // wrapped Apple provider reads it fresh on every call, so flipping it never
+  // requires rebuilding the router (docs/plan.md §5 Phase 4 acceptance: the
+  // *next* turn after flipping falls back, with history intact because the
+  // router and `useChat`'s conversation are untouched).
+  const [simulateOn, setSimulateOn] = useState(false);
+  const toggleSimulate = useCallback((value: boolean) => {
+    simulateUnavailableFlag.current = value;
+    setSimulateOn(value);
+  }, []);
 
-  const [availability, setAvailability] = useState<PanelState<Availability>>({ status: 'idle' });
-  const [capabilities, setCapabilities] = useState<PanelState<Capabilities>>({ status: 'idle' });
-  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
+  const provider = useMemo<LLMProvider>(() => resolveProvider(providerKind), [providerKind]);
 
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const scrollRef = useRef<ScrollView | null>(null);
-
-  // On mount, and whenever the toggle changes providers. Deliberately a
-  // plain data fetch with no setState call of its own (react-hooks flags a
-  // setState reachable directly from a useEffect callback as a
-  // cascading-render risk) -- the effect below applies the result itself,
-  // in a `.then` callback, once it knows the request was not superseded.
+  // The router's only telemetry seam. Content-free by construction
+  // (src/core/router/router.ts) -- ids, a reason enum, booleans -- so it is
+  // safe to hold verbatim in state and render. Registered from an effect
+  // (never called during render) via `setOnRouteListener`, since
+  // `createRouter`'s `onRoute` cannot be swapped after construction.
+  const [lastRoute, setLastRoute] = useState<RouteReport | undefined>(undefined);
+  const pendingRouteCaptionRef = useRef<string | undefined>(undefined);
+  const handleRoute = useCallback<OnRoute>((report) => {
+    setLastRoute(report);
+    pendingRouteCaptionRef.current = routeCaption(report);
+  }, []);
   useEffect(() => {
-    let superseded = false;
-    fetchProviderStatus(provider).then((result) => {
-      if (superseded) return;
-      if (result.ok) {
-        setAvailability({ status: 'ready', value: result.availability });
-        setCapabilities({ status: 'ready', value: result.capabilities });
-      } else {
-        setError(result.error);
+    setOnRouteListener(handleRoute);
+    return () => setOnRouteListener(undefined);
+  }, [handleRoute]);
+
+  const [inputText, setInputText] = useState('');
+
+  const chat = useChat({
+    provider,
+    context: {
+      strategy: 'slidingWindow',
+      reservedForOutput: DEMO_RESERVED_FOR_OUTPUT_TOKENS,
+      safetyMargin: DEMO_SAFETY_MARGIN_TOKENS,
+    },
+  });
+
+  // Which provider answered each assistant message in `chat.messages`,
+  // indexed the same way. Only ever grows in step with `chat.messages`
+  // (or resets to `[]` alongside it via `reset()`/a provider switch) --
+  // `useChat` owns the array itself, so this mirrors it rather than
+  // maintaining its own copy of the conversation.
+  const [routeCaptions, setRouteCaptions] = useState<readonly (string | undefined)[]>([]);
+  useEffect(() => {
+    setRouteCaptions((previous) => {
+      if (chat.messages.length <= previous.length) {
+        return chat.messages.length === 0 ? [] : previous.slice(0, chat.messages.length);
       }
+      const next = [...previous];
+      for (let index = previous.length; index < chat.messages.length; index += 1) {
+        next.push(
+          chat.messages[index]?.role === 'assistant' ? pendingRouteCaptionRef.current : undefined
+        );
+      }
+      return next;
     });
-    return () => {
-      superseded = true;
-    };
-  }, [provider]);
+  }, [chat.messages]);
+
+  const resubscribeToForeground = useCallback((check: () => void) => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') check();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  const availability = useAvailability(provider, { resubscribe: resubscribeToForeground });
 
   // Fire-and-forget: `prewarm` is a hint, not a contract (src/core/provider.ts)
   // -- it never throws and its result says nothing about how fast the next
-  // request will be, so there is nothing useful to do with the resolved
-  // value or a rejection. Warming the Apple provider as soon as its toggle
-  // is selected means the model is more likely to be ready by the time the
-  // maintainer finishes typing a first message.
+  // request will be. Warming as soon as a provider is selected means the
+  // on-device model is more likely to be ready by the time the maintainer
+  // finishes typing a first message.
   useEffect(() => {
-    if (providerKind !== 'apple') return;
     const prewarming = provider.prewarm?.();
     prewarming?.catch(() => undefined);
-  }, [provider, providerKind]);
-
-  // The refresh button is a plain event handler, so toggling a loading flag
-  // around the same fetch here is unambiguous.
-  const handleRefreshPress = useCallback(() => {
-    setIsCheckingAvailability(true);
-    fetchProviderStatus(provider).then((result) => {
-      setIsCheckingAvailability(false);
-      if (result.ok) {
-        setAvailability({ status: 'ready', value: result.availability });
-        setCapabilities({ status: 'ready', value: result.capabilities });
-      } else {
-        setError(result.error);
-      }
-    });
   }, [provider]);
 
-  const appendAssistantDelta = useCallback((id: string, delta: string) => {
-    setMessages((previous) =>
-      previous.map((message) =>
-        message.id === id ? { ...message, content: message.content + delta } : message
-      )
-    );
-  }, []);
+  const scrollRef = useRef<ScrollView | null>(null);
 
-  const finishAssistantMessage = useCallback((id: string) => {
-    setMessages((previous) =>
-      previous.map((message) => (message.id === id ? { ...message, streaming: false } : message))
-    );
-  }, []);
-
-  const dropEmptyAssistantMessage = useCallback((id: string) => {
-    setMessages((previous) =>
-      previous.filter((message) => !(message.id === id && message.content === ''))
-    );
-  }, []);
-
-  /** Replaces (rather than appends to) a message's content -- for `objectSnapshot` events, which are whole-value snapshots, not deltas (src/core/stream.ts). */
-  const replaceAssistantContent = useCallback((id: string, content: string) => {
-    setMessages((previous) =>
-      previous.map((message) => (message.id === id ? { ...message, content } : message))
-    );
-  }, []);
-
-  const setAssistantFooter = useCallback((id: string, footer: string) => {
-    setMessages((previous) =>
-      previous.map((message) => (message.id === id ? { ...message, footer } : message))
-    );
-  }, []);
-
-  /** Inserts a small system-style "tool" bubble right before a given message -- so it lands above the assistant's answer even though that placeholder was added to the list first. */
-  const insertToolCallMessage = useCallback((beforeId: string, content: string) => {
-    setMessages((previous) => {
-      const toolMessage: ChatMessage = {
-        id: makeMessageId(),
-        role: 'tool',
-        content,
-        streaming: false,
-      };
-      const index = previous.findIndex((message) => message.id === beforeId);
-      if (index === -1) return [...previous, toolMessage];
-      return [...previous.slice(0, index), toolMessage, ...previous.slice(index)];
-    });
-  }, []);
-
-  const send = useCallback(async () => {
+  const handleSend = useCallback(() => {
     const text = inputText.trim();
-    if (text === '' || isGenerating) return;
-
-    setError(undefined);
+    if (text === '' || chat.status !== 'idle') return;
     setInputText('');
-
-    const userMessage: ChatMessage = {
-      id: makeMessageId(),
-      role: 'user',
-      content: text,
-      streaming: false,
-    };
-    const assistantId = makeMessageId();
-    const assistantPlaceholder: ChatMessage = {
-      id: assistantId,
-      role: 'assistant',
-      content: '',
-      streaming: true,
-    };
-    setMessages((previous) => [...previous, userMessage, assistantPlaceholder]);
-
-    // The app owns the conversation array; fitContext never mutates it and
-    // returns a new, possibly-trimmed list (src/core/context/fit.ts). Tool
-    // bubbles (role 'tool') are a UI-only annotation from the tool demo --
-    // `MessageRole` has no 'tool' member yet (src/core/messages.ts) -- so
-    // they are filtered out here rather than sent as conversation turns.
-    const fullHistory: readonly Message[] = [...messages, userMessage]
-      .filter(
-        (message): message is ChatMessage & { role: 'user' | 'assistant' } =>
-          message.role !== 'tool'
-      )
-      .map(({ role, content }) => ({ role, content }));
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    setIsGenerating(true);
-
-    try {
-      const fitted = await fitContext(fullHistory, {
-        provider,
-        strategy: 'slidingWindow',
-        reservedForOutput: DEMO_RESERVED_FOR_OUTPUT_TOKENS,
-        safetyMargin: DEMO_SAFETY_MARGIN_TOKENS,
-        signal: controller.signal,
-      });
-
-      setContextDebug({
-        sentCount: fitted.messages.length,
-        historyCount: fullHistory.length,
-        droppedCount: fitted.dropped.length,
-      });
-
-      const request: GenerateRequest = { messages: fitted.messages };
-      if (providerKind === 'mock') scriptMockReply(request);
-
-      for await (const event of provider.stream(request, { signal: controller.signal })) {
-        if (event.type === 'textDelta') {
-          appendAssistantDelta(assistantId, event.delta);
-        }
-        // 'finish' and any future event types are ignored here on purpose
-        // (docs/plan.md: consumers should ignore event types they do not
-        // recognise); the loop simply ends after 'finish'.
-      }
-    } catch (thrown) {
-      const llmError = toLLMError(thrown, { providerId: provider.id });
-      setError({ code: llmError.code, message: llmError.message });
-      dropEmptyAssistantMessage(assistantId);
-    } finally {
-      finishAssistantMessage(assistantId);
-      setIsGenerating(false);
-      abortControllerRef.current = null;
-    }
-  }, [
-    appendAssistantDelta,
-    dropEmptyAssistantMessage,
-    finishAssistantMessage,
-    inputText,
-    isGenerating,
-    messages,
-    provider,
-    providerKind,
-  ]);
-
-  // Structured-output checkpoint (docs/plan.md §5 Phase 3 step 6): a fixed
-  // schema-carrying request through the active provider. Renders
-  // `objectSnapshot` events live as they arrive, and runs a hand-rolled
-  // conformance check against the final object -- no schema library
-  // involved on either side of the wire.
-  const runJsonDemo = useCallback(async () => {
-    if (isGenerating) return;
-    setError(undefined);
-
-    const userMessage: ChatMessage = {
-      id: makeMessageId(),
-      role: 'user',
-      content: JSON_DEMO_PROMPT,
-      streaming: false,
-    };
-    const assistantId = makeMessageId();
-    const assistantPlaceholder: ChatMessage = {
-      id: assistantId,
-      role: 'assistant',
-      content: '',
-      streaming: true,
-      variant: 'object',
-    };
-    setMessages((previous) => [...previous, userMessage, assistantPlaceholder]);
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    setIsGenerating(true);
-
-    try {
-      // MockProvider never evaluates `schema` -- it only replays what a turn
-      // scripts -- so it needs a scripted stand-in to still demo the flow.
-      if (providerKind === 'mock') scriptMockWeatherReply();
-
-      const request: GenerateRequest = {
-        messages: [{ role: 'user', content: JSON_DEMO_PROMPT }],
-        schema: JSON_DEMO_SCHEMA,
-      };
-
-      let latestObject: unknown;
-      for await (const event of provider.stream(request, { signal: controller.signal })) {
-        if (event.type === 'objectSnapshot') {
-          latestObject = event.snapshot;
-          replaceAssistantContent(assistantId, JSON.stringify(event.snapshot, null, 2));
-        } else if (event.type === 'finish' && event.result.object !== undefined) {
-          latestObject = event.result.object;
-          replaceAssistantContent(assistantId, JSON.stringify(event.result.object, null, 2));
-        }
-        // 'textDelta' and 'toolCall' are not expected from this request but
-        // are ignored rather than treated as errors, per the StreamEvent
-        // contract (src/core/stream.ts).
-      }
-
-      const conformance = checkWeatherReport(latestObject);
-      setAssistantFooter(
-        assistantId,
-        conformance.pass
-          ? 'PASS -- matches the schema'
-          : `FAIL -- ${conformance.reasons.join('; ')}`
-      );
-    } catch (thrown) {
-      const llmError = toLLMError(thrown, { providerId: provider.id });
-      setError({ code: llmError.code, message: llmError.message });
-      dropEmptyAssistantMessage(assistantId);
-    } finally {
-      finishAssistantMessage(assistantId);
-      setIsGenerating(false);
-      abortControllerRef.current = null;
-    }
-  }, [
-    dropEmptyAssistantMessage,
-    finishAssistantMessage,
-    isGenerating,
-    provider,
-    providerKind,
-    replaceAssistantContent,
-    setAssistantFooter,
-  ]);
-
-  // Tool round-trip checkpoint (docs/plan.md §5 Phase 3 step 7): a request
-  // carrying one tool whose `execute` really runs (a fake, delayed, slightly
-  // randomized "sensor" -- see providers.ts). The `toolCall` StreamEvent
-  // renders as a small system bubble; the point to verify on-device is that
-  // the model's final answer actually reflects the value the handler
-  // returned, not a value it invented.
-  const runToolDemo = useCallback(async () => {
-    if (isGenerating) return;
-    setError(undefined);
-
-    const userMessage: ChatMessage = {
-      id: makeMessageId(),
-      role: 'user',
-      content: TOOL_DEMO_PROMPT,
-      streaming: false,
-    };
-    const assistantId = makeMessageId();
-    const assistantPlaceholder: ChatMessage = {
-      id: assistantId,
-      role: 'assistant',
-      content: '',
-      streaming: true,
-    };
-    setMessages((previous) => [...previous, userMessage, assistantPlaceholder]);
-
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-    setIsGenerating(true);
-
-    try {
-      const batteryTool = makeBatteryTool();
-
-      // MockProvider reports capabilities().tools === false and never calls
-      // ToolDefinition.execute itself. Run the real handler here so the
-      // round trip is honest either way, show the same "tool called" bubble
-      // a real provider's `toolCall` event would produce, then script a
-      // reply whose text actually depends on what the handler returned.
-      if (providerKind === 'mock') {
-        const reading = await batteryTool.execute?.({
-          callId: 'mock-battery-call',
-          toolName: batteryTool.name,
-          arguments: {},
-          signal: controller.signal,
-        });
-        insertToolCallMessage(
-          assistantId,
-          `→ tool ${batteryTool.name} called with {} -> ${JSON.stringify(reading)}`
-        );
-        scriptMockBatteryReply(reading as BatteryReading);
-      }
-
-      const request: GenerateRequest = {
-        messages: [{ role: 'user', content: TOOL_DEMO_PROMPT }],
-        tools: [batteryTool],
-      };
-
-      for await (const event of provider.stream(request, { signal: controller.signal })) {
-        if (event.type === 'textDelta') {
-          appendAssistantDelta(assistantId, event.delta);
-        } else if (event.type === 'toolCall') {
-          insertToolCallMessage(
-            assistantId,
-            `→ tool ${event.toolName} called with ${JSON.stringify(event.arguments)}`
-          );
-        }
-      }
-    } catch (thrown) {
-      const llmError = toLLMError(thrown, { providerId: provider.id });
-      setError({ code: llmError.code, message: llmError.message });
-      dropEmptyAssistantMessage(assistantId);
-    } finally {
-      finishAssistantMessage(assistantId);
-      setIsGenerating(false);
-      abortControllerRef.current = null;
-    }
-  }, [
-    appendAssistantDelta,
-    dropEmptyAssistantMessage,
-    finishAssistantMessage,
-    insertToolCallMessage,
-    isGenerating,
-    provider,
-    providerKind,
-  ]);
-
-  const stop = useCallback(() => {
-    abortControllerRef.current?.abort();
-  }, []);
+    // MockProvider only replays a scripted queue; the router's providers need
+    // no such scripting. `scriptMockReply` only reads the last user message,
+    // so a minimal one-message request is enough to script from `text`
+    // itself, ahead of `useChat` building its own (system-prompt-and-history-
+    // carrying) request internally.
+    if (providerKind === 'mock') scriptMockReply({ messages: [{ role: 'user', content: text }] });
+    chat.send(text).catch(() => undefined);
+  }, [chat, inputText, providerKind]);
 
   const changeProvider = useCallback(
     (kind: ProviderKind) => {
-      if (isGenerating || kind === providerKind) return;
+      if (chat.status !== 'idle' || kind === providerKind) return;
       setProviderKind(kind);
-      setContextDebug(undefined);
+      chat.reset();
     },
-    [isGenerating, providerKind]
+    [chat, providerKind]
   );
+
+  // ---- JSON demo (useGenerate) --------------------------------------------
+
+  const jsonDemo = useGenerate(provider);
+  const jsonDemoObject = jsonDemo.object;
+  const jsonConformance = useMemo(
+    () => (jsonDemoObject === undefined ? undefined : checkWeatherReport(jsonDemoObject)),
+    [jsonDemoObject]
+  );
+  const runJsonDemo = useCallback(() => {
+    if (chat.status !== 'idle') return;
+    if (providerKind === 'mock') scriptMockWeatherReply();
+    jsonDemo
+      .generate({
+        messages: [{ role: 'user', content: JSON_DEMO_PROMPT }],
+        schema: JSON_DEMO_SCHEMA,
+      })
+      .catch(() => undefined);
+  }, [chat.status, jsonDemo, providerKind]);
+
+  // ---- Tool demo (useGenerate) ---------------------------------------------
+
+  const toolDemo = useGenerate(provider);
+  const [toolCallNotice, setToolCallNotice] = useState<string | undefined>(undefined);
+  const runToolDemo = useCallback(async () => {
+    if (chat.status !== 'idle') return;
+    setToolCallNotice(undefined);
+
+    const battery = makeBatteryTool();
+    // Wrapping `execute` (rather than reading `toolDemo.result` afterwards)
+    // is what lets the same "→ tool called with …" notice appear whether the
+    // handler ran because a real provider's model asked for it, or because
+    // `MockProvider` never calls `execute` and the demo has to run it itself
+    // below (docs/providers.ts comments on `scriptMockBatteryReply`).
+    const tool: ToolDefinition = {
+      ...battery,
+      execute: async (call) => {
+        const reading = await battery.execute?.(call);
+        setToolCallNotice(
+          `→ tool ${battery.name} called with ${JSON.stringify(call.arguments)} -> ${JSON.stringify(reading)}`
+        );
+        return reading;
+      },
+    };
+
+    if (providerKind === 'mock') {
+      // MockProvider reports capabilities().tools === false and never calls
+      // ToolDefinition.execute itself -- run it directly so the scripted
+      // reply still depends on a real reading, the same way a real
+      // provider's final answer would.
+      const reading = await tool.execute?.({
+        callId: 'mock-battery-call',
+        toolName: tool.name,
+        arguments: {},
+        signal: new AbortController().signal,
+      });
+      scriptMockBatteryReply(reading as BatteryReading);
+    }
+
+    try {
+      await toolDemo.generate({
+        messages: [{ role: 'user', content: TOOL_DEMO_PROMPT }],
+        tools: [tool],
+      });
+    } catch {
+      // toolDemo.error already carries this.
+    }
+  }, [chat.status, providerKind, toolDemo]);
+
+  const contextDebugLine = useMemo(() => {
+    const fit = chat.lastFit;
+    if (fit === undefined) return undefined;
+    const dropped =
+      fit.dropped.length > 0 ? ` (${fit.dropped.length} dropped to fit the context window)` : '';
+    const routing =
+      providerKind === 'router' && lastRoute !== undefined ? ` -- ${routeCaption(lastRoute)}` : '';
+    return `Sent ${fit.sentCount} of ${fit.historyCount} messages in history${dropped}${routing}`;
+  }, [chat.lastFit, lastRoute, providerKind]);
+
+  const isGenerating = chat.status !== 'idle';
+  const bannerError = chat.error;
+  const streamingText = chat.streamingText;
 
   return (
     <SafeAreaProvider>
@@ -486,19 +266,27 @@ export default function App() {
           // (observed on the API 36 emulator).
           behavior="padding"
           keyboardVerticalOffset={0}>
-          <StatusLine providerId={provider.id} availability={availability} />
+          <StatusLine providerId={provider.id} availability={availability.availability} />
 
           <ProviderToggle active={providerKind} disabled={isGenerating} onChange={changeProvider} />
 
+          <View style={styles.switchRow}>
+            <Text style={styles.switchLabel}>Simulate on-device unavailable</Text>
+            <Switch value={simulateOn} onValueChange={toggleSimulate} />
+          </View>
+
           <AvailabilityPanel
-            availability={availability}
-            capabilities={capabilities}
-            loading={isCheckingAvailability}
-            onRefresh={handleRefreshPress}
+            availability={availability.availability}
+            capabilities={availability.capabilities}
+            loading={availability.loading}
+            onRefresh={availability.refresh}
           />
 
-          {error !== undefined ? (
-            <ErrorBanner error={error} onDismiss={() => setError(undefined)} />
+          {bannerError !== undefined || availability.error !== undefined ? (
+            <ErrorBanner
+              code={(bannerError ?? availability.error)?.code ?? 'unknown'}
+              message={(bannerError ?? availability.error)?.message ?? ''}
+            />
           ) : null}
 
           <ScrollView
@@ -506,22 +294,24 @@ export default function App() {
             style={styles.messageList}
             contentContainerStyle={styles.messageListContent}
             onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}>
-            {messages.length === 0 ? (
+            {chat.messages.length === 0 && streamingText === undefined ? (
               <Text style={styles.emptyState}>No messages yet -- send one below.</Text>
             ) : (
-              messages.map((message) => <MessageBubble key={message.id} message={message} />)
+              chat.messages.map((message, index) => (
+                <MessageBubble key={index} message={message} caption={routeCaptions[index]} />
+              ))
             )}
+            {streamingText !== undefined ? (
+              <MessageBubble
+                message={{ role: 'assistant', content: streamingText }}
+                streaming={chat.status === 'streaming'}
+              />
+            ) : null}
           </ScrollView>
 
           <View style={styles.demosRow}>
             <View style={styles.demosButtonWrapper}>
-              <Button
-                title="JSON demo"
-                onPress={() => {
-                  runJsonDemo();
-                }}
-                disabled={isGenerating}
-              />
+              <Button title="JSON demo" onPress={runJsonDemo} disabled={isGenerating} />
             </View>
             <View style={styles.demosButtonWrapper}>
               <Button
@@ -534,13 +324,33 @@ export default function App() {
             </View>
           </View>
 
-          {contextDebug !== undefined ? (
-            <Text style={styles.debugLine}>
-              Sent {contextDebug.sentCount} of {contextDebug.historyCount} messages in history
-              {contextDebug.droppedCount > 0
-                ? ` (${contextDebug.droppedCount} dropped to fit the context window)`
-                : ''}
-            </Text>
+          <DemoResult
+            title="JSON demo"
+            loading={jsonDemo.loading}
+            error={jsonDemo.error}
+            text={
+              jsonDemo.object !== undefined
+                ? JSON.stringify(jsonDemo.object, null, 2)
+                : jsonDemo.result?.text
+            }
+            footer={
+              jsonConformance === undefined
+                ? undefined
+                : jsonConformance.pass
+                  ? 'PASS -- matches the schema'
+                  : `FAIL -- ${jsonConformance.reasons.join('; ')}`
+            }
+          />
+          <DemoResult
+            title="Tool demo"
+            loading={toolDemo.loading}
+            error={toolDemo.error}
+            text={toolDemo.result?.text}
+            footer={toolCallNotice}
+          />
+
+          {contextDebugLine !== undefined ? (
+            <Text style={styles.debugLine}>{contextDebugLine}</Text>
           ) : null}
 
           <View style={styles.inputRow}>
@@ -553,15 +363,9 @@ export default function App() {
               multiline
             />
             {isGenerating ? (
-              <Button title="Stop" color="#b91c1c" onPress={stop} />
+              <Button title="Stop" color="#b91c1c" onPress={chat.stop} />
             ) : (
-              <Button
-                title="Send"
-                onPress={() => {
-                  send();
-                }}
-                disabled={inputText.trim() === ''}
-              />
+              <Button title="Send" onPress={handleSend} disabled={inputText.trim() === ''} />
             )}
           </View>
         </KeyboardAvoidingView>
@@ -572,15 +376,15 @@ export default function App() {
 
 function StatusLine(props: {
   readonly providerId: string;
-  readonly availability: PanelState<Availability>;
+  readonly availability: Availability | undefined;
 }) {
   const { availability } = props;
   const label =
-    availability.status !== 'ready'
+    availability === undefined
       ? 'checking…'
-      : availability.value.available
+      : availability.available
         ? 'available'
-        : `unavailable (${availability.value.reason})`;
+        : `unavailable (${availability.reason})`;
   return (
     <Text style={styles.statusLine}>
       Provider: {props.providerId} -- {label}
@@ -595,10 +399,10 @@ function ProviderToggle(props: {
 }) {
   return (
     <View style={styles.toggleRow}>
-      {(['mock', 'apple'] as const).map((kind) => (
+      {(['router', 'mock'] as const).map((kind) => (
         <View key={kind} style={styles.toggleButtonWrapper}>
           <Button
-            title={kind === 'mock' ? 'Mock' : 'Apple'}
+            title={kind === 'router' ? 'Router' : 'Mock'}
             color={props.active === kind ? '#1d4ed8' : undefined}
             disabled={props.disabled}
             onPress={() => props.onChange(kind)}
@@ -610,8 +414,8 @@ function ProviderToggle(props: {
 }
 
 function AvailabilityPanel(props: {
-  readonly availability: PanelState<Availability>;
-  readonly capabilities: PanelState<Capabilities>;
+  readonly availability: Availability | undefined;
+  readonly capabilities: Capabilities | undefined;
   readonly loading: boolean;
   readonly onRefresh: () => void;
 }) {
@@ -636,14 +440,10 @@ function AvailabilityPanel(props: {
       {expanded ? (
         <ScrollView style={styles.panelBody} nestedScrollEnabled>
           <Text style={styles.panelJson}>
-            {availability.status === 'ready'
-              ? JSON.stringify(availability.value, null, 2)
-              : 'not yet checked'}
+            {availability !== undefined ? JSON.stringify(availability, null, 2) : 'not yet checked'}
           </Text>
           <Text style={styles.panelJson}>
-            {capabilities.status === 'ready'
-              ? JSON.stringify(capabilities.value, null, 2)
-              : 'not yet checked'}
+            {capabilities !== undefined ? JSON.stringify(capabilities, null, 2) : 'not yet checked'}
           </Text>
         </ScrollView>
       ) : null}
@@ -651,62 +451,76 @@ function AvailabilityPanel(props: {
   );
 }
 
-function ErrorBanner(props: { readonly error: ChatError; readonly onDismiss: () => void }) {
+function ErrorBanner(props: { readonly code: string; readonly message: string }) {
   return (
     <View style={styles.errorBanner}>
       <View style={styles.errorTextColumn}>
-        <Text style={styles.errorCode}>{props.error.code}</Text>
-        <Text style={styles.errorMessage}>{props.error.message}</Text>
+        <Text style={styles.errorCode}>{props.code}</Text>
+        <Text style={styles.errorMessage}>{props.message}</Text>
       </View>
-      <Button title="Dismiss" onPress={props.onDismiss} />
     </View>
   );
 }
 
-function MessageBubble(props: { readonly message: ChatMessage }) {
+function MessageBubble(props: {
+  readonly message: Message;
+  readonly caption?: string;
+  readonly streaming?: boolean;
+}) {
   const { message } = props;
-
-  // The tool-demo's "→ tool … called with …" notice: a small, centered,
-  // system-style line rather than a chat bubble on either side.
-  if (message.role === 'tool') {
-    return (
-      <View style={styles.toolRow}>
-        <Text style={styles.toolText}>{message.content}</Text>
-      </View>
-    );
-  }
-
   const isUser = message.role === 'user';
-  const isObject = message.variant === 'object';
   return (
     <View style={[styles.bubbleRow, isUser ? styles.bubbleRowUser : styles.bubbleRowAssistant]}>
-      <View
-        style={[
-          styles.bubble,
-          isUser ? styles.bubbleUser : styles.bubbleAssistant,
-          isObject ? styles.bubbleObject : null,
-        ]}>
+      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAssistant]}>
         <Text
-          style={[
-            styles.bubbleText,
-            isUser ? styles.bubbleTextUser : styles.bubbleTextAssistant,
-            isObject ? styles.bubbleObjectText : null,
-          ]}>
-          {isObject && message.content === '' && message.streaming
-            ? 'Generating…'
-            : message.content}
-          {message.streaming ? '▍' : ''}
+          style={[styles.bubbleText, isUser ? styles.bubbleTextUser : styles.bubbleTextAssistant]}>
+          {message.content}
+          {props.streaming ? '▍' : ''}
         </Text>
-        {message.footer !== undefined ? (
-          <Text
-            style={[
-              styles.bubbleFooter,
-              message.footer.startsWith('PASS') ? styles.bubbleFooterPass : styles.bubbleFooterFail,
-            ]}>
-            {message.footer}
-          </Text>
+        {props.caption !== undefined ? (
+          <Text style={styles.bubbleCaption}>{props.caption}</Text>
         ) : null}
       </View>
+    </View>
+  );
+}
+
+function DemoResult(props: {
+  readonly title: string;
+  readonly loading: boolean;
+  readonly error: { readonly code: string; readonly message: string } | undefined;
+  readonly text: string | undefined;
+  readonly footer: string | undefined;
+}) {
+  if (
+    !props.loading &&
+    props.error === undefined &&
+    props.text === undefined &&
+    props.footer === undefined
+  ) {
+    return null;
+  }
+  return (
+    <View style={styles.demoResult}>
+      <View style={styles.demoResultHeader}>
+        <Text style={styles.demoResultTitle}>{props.title}</Text>
+        {props.loading ? <ActivityIndicator size="small" /> : null}
+      </View>
+      {props.error !== undefined ? (
+        <Text style={styles.demoResultError}>
+          {props.error.code}: {props.error.message}
+        </Text>
+      ) : null}
+      {props.text !== undefined ? <Text style={styles.demoResultText}>{props.text}</Text> : null}
+      {props.footer !== undefined ? (
+        <Text
+          style={[
+            styles.bubbleFooter,
+            props.footer.startsWith('PASS') ? styles.bubbleFooterPass : styles.bubbleFooterNeutral,
+          ]}>
+          {props.footer}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -727,6 +541,14 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   toggleButtonWrapper: { marginRight: 8 },
+  switchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  switchLabel: { fontSize: 13, color: '#374151' },
   panel: {
     marginHorizontal: 12,
     marginBottom: 8,
@@ -774,9 +596,30 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   demosButtonWrapper: { marginRight: 8 },
+  demoResult: {
+    marginHorizontal: 12,
+    marginTop: 6,
+    padding: 8,
+    backgroundColor: '#111827',
+    borderRadius: 8,
+  },
+  demoResultHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  demoResultTitle: { color: '#e5e7eb', fontWeight: '600', fontSize: 12 },
+  demoResultError: { color: '#f87171', fontSize: 11 },
+  demoResultText: {
+    color: '#a7f3d0',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    fontSize: 11,
+  },
   debugLine: {
     marginHorizontal: 12,
     marginBottom: 4,
+    marginTop: 4,
     fontSize: 11,
     color: '#6b7280',
   },
@@ -789,25 +632,10 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 15 },
   bubbleTextUser: { color: '#ffffff' },
   bubbleTextAssistant: { color: '#111827' },
-  bubbleObject: { backgroundColor: '#111827', borderRadius: 10 },
-  bubbleObjectText: {
-    color: '#a7f3d0',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    fontSize: 12,
-  },
+  bubbleCaption: { fontSize: 10, color: '#6b7280', marginTop: 4 },
   bubbleFooter: { fontSize: 12, fontWeight: '700', marginTop: 6 },
   bubbleFooterPass: { color: '#4ade80' },
-  bubbleFooterFail: { color: '#f87171' },
-  toolRow: { alignItems: 'center', marginVertical: 4 },
-  toolText: {
-    fontSize: 11,
-    fontStyle: 'italic',
-    color: '#6b7280',
-    backgroundColor: '#e5e7eb',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
+  bubbleFooterNeutral: { color: '#93c5fd' },
   inputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
