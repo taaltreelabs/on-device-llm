@@ -184,7 +184,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
+      # The ubuntu runner image ships a full Android SDK at
+      # /usr/local/lib/android/sdk (ANDROID_HOME preset). The
+      # android-actions/setup-android action is not used because its default
+      # package list still requests the long-removed legacy 'tools' package,
+      # which fails sdkmanager outright (seen on this repo's first CI run).
+      # Gradle installs any missing platform/build-tools itself once the
+      # licenses are accepted.
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Install root dependencies
         run: npm ci
