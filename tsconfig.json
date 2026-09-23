@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "lib": ["dom", "DOM.Iterable", "esnext"],
+    "typeRoots": ["./ts-declarations", "./node_modules/@types"],
+    "jsx": "react-native",
+    "target": "esnext",
+    // CommonJS (not "bundler"/"esnext") so the compiled `build/` output is
+    // directly loadable by plain Node with no bundler in front of it — a
+    // hard requirement for `core`/`openai` (docs/plan.md §2,
+    // scripts/check-isolation.mjs). Metro and other RN bundlers consume
+    // CJS via the package's `exports` map fine.
+    "moduleResolution": "node",
+    "module": "commonjs",
+    "moduleDetection": "force",
+    "esModuleInterop": true,
+    "sourceMap": true,
+    "declaration": true,
+    "declarationMap": true,
+    "inlineSources": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": false,
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": false,
+    "rootDir": "./src",
+    "outDir": "./build"
+  },
+  "include": ["./src"],
+  "exclude": ["**/__mocks__/*", "**/__tests__/*"]
+}

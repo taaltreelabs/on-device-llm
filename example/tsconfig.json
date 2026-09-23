@@ -1,0 +1,13 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@taaltreelabs/on-device-llm": ["../src/index"],
+      "@taaltreelabs/on-device-llm/core": ["../src/core/index"],
+      "@taaltreelabs/on-device-llm/openai": ["../src/openai/index"],
+      "@taaltreelabs/on-device-llm/apple": ["../src/apple/index"],
+      "@taaltreelabs/on-device-llm/react": ["../src/react/index"]
+    }
+  }
+}

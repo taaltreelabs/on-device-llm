@@ -1,0 +1,102 @@
+{
+  "name": "@taaltreelabs/on-device-llm",
+  "version": "0.1.0",
+  "description": "On-device LLMs for React Native and Expo, with automatic cloud fallback and context window management",
+  "main": "./build/index.js",
+  "types": "./build/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "default": "./build/index.js"
+    },
+    "./core": {
+      "types": "./build/core/index.d.ts",
+      "default": "./build/core/index.js"
+    },
+    "./openai": {
+      "types": "./build/openai/index.d.ts",
+      "default": "./build/openai/index.js"
+    },
+    "./apple": {
+      "types": "./build/apple/index.d.ts",
+      "default": "./build/apple/index.js"
+    },
+    "./react": {
+      "types": "./build/react/index.d.ts",
+      "default": "./build/react/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "build",
+    "ios",
+    "android",
+    "!android/build",
+    "expo-module.config.json"
+  ],
+  "scripts": {
+    "build": "node internal/module_scripts/build.js",
+    "clean": "node internal/module_scripts/clean.js",
+    "lint": "eslint src/ scripts/",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ci": "vitest run --testTimeout=15000 --retry=1",
+    "typecheck": "tsc --noEmit",
+    "check:isolation": "node scripts/check-isolation.mjs",
+    "check:pack": "node scripts/check-pack.mjs",
+    "acceptance:fm": "node scripts/fm-acceptance.mjs",
+    "harness:apple": "swift run --package-path harness Runner",
+    "prepare": "node internal/module_scripts/prepare.js",
+    "open:ios": "node internal/module_scripts/open-ios.js",
+    "open:android": "node internal/module_scripts/open-android.js"
+  },
+  "keywords": [
+    "react-native",
+    "expo",
+    "on-device-llm",
+    "foundation-models",
+    "apple-intelligence",
+    "llm"
+  ],
+  "repository": "https://github.com/taaltreelabs/on-device-llm",
+  "bugs": {
+    "url": "https://github.com/taaltreelabs/on-device-llm/issues"
+  },
+  "author": "TaalTree Labs <charles.juszczak@gmail.com> (https://github.com/taaltreelabs)",
+  "license": "MIT",
+  "homepage": "https://github.com/taaltreelabs/on-device-llm#readme",
+  "dependencies": {},
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@testing-library/react": "^16.3.3",
+    "@types/react": "~19.1.1",
+    "@types/react-dom": "~19.1.11",
+    "babel-preset-expo": "~55.0.8",
+    "eslint": "~9.39.4",
+    "eslint-config-universe": "^15.0.3",
+    "expo": "^57.0.23",
+    "fast-check": "^4.10.2",
+    "jsdom": "^27.4.0",
+    "prettier": "^3.0.0",
+    "react-dom": "^19.3.0",
+    "react-native": "0.82.1",
+    "typescript": "^5.9.2",
+    "vitest": "^5.0.0"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "expo": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-native": {
+      "optional": true
+    }
+  }
+}
