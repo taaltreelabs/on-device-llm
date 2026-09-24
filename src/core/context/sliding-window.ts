@@ -107,7 +107,7 @@ export async function slidingWindow(
   noteCounterFailure(inputMeasurement, warnings);
 
   const keep = new Set<number>(messages.map((_, index) => index));
-  const dropped: Message[] = [];
+  const droppedIndices: number[] = [];
   let measurement = inputMeasurement;
 
   // Every turn except the newest is a candidate, oldest first.
@@ -117,7 +117,7 @@ export async function slidingWindow(
   while (measurement.tokens > budget.tokens && nextToDrop < droppable.length) {
     for (const index of droppable[nextToDrop].indices) {
       keep.delete(index);
-      dropped.push(messages[index]);
+      droppedIndices.push(index);
       if (isSummaryMessage(messages[index], options.summaryMarker)) {
         warnings.push({
           code: 'summaryDropped',
@@ -130,6 +130,17 @@ export async function slidingWindow(
     measurement = await measure(projectMessages(messages, keep));
     noteCounterFailure(measurement, warnings);
   }
+
+  // `dropped` is documented as "in original order" (result.ts). Turns are
+  // dropped oldest-turn-first, but an R7-merged turn's indices are not
+  // contiguous — `[user, assistant, system, assistant]` merges into indices
+  // [0, 1, 3] beside a system block [2] — so concatenation order is not
+  // input order. Found by the fast-check property "reports every removed
+  // message in `dropped`, exactly once" (seed 507863177), roughly one run in
+  // a dozen; every earlier "phantom flake" in this suite was this bug.
+  const dropped: Message[] = droppedIndices
+    .sort((a, b) => a - b)
+    .map((index) => messages[index]);
 
   if (measurement.tokens > budget.tokens) {
     throw contextOverflowError({
