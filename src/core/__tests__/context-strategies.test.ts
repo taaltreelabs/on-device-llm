@@ -92,6 +92,18 @@ describe('slidingWindow', () => {
     }
   });
 
+  it('reports dropped messages in original order even across an R7-merged turn', async () => {
+    // fast-check counterexample (seed 507863177): the leading assistant run
+    // and the assistant after the system blocks merge into one turn with
+    // non-contiguous indices [0, 3], straddling system blocks [1(pinned), 2].
+    // Building `dropped` in turn order emitted [msg0, msg3, msg2]; the
+    // documented contract (result.ts) is original input order.
+    const messages = conv('a:', 's:', 's:', 'a:', 's:m4w0 m4w1 m4w2');
+    const result = await slidingWindow(messages, env(5));
+    const kept = new Set(result.messages);
+    expect(result.dropped).toEqual(messages.filter((message) => !kept.has(message)));
+  });
+
   it('overflows rather than returning a doomed request even with nothing to drop', async () => {
     await expect(slidingWindow(conv('u:' + words(50)), env(10))).rejects.toMatchObject({
       code: 'contextOverflow',
