@@ -2,6 +2,20 @@
 
 Newest first. Each entry: what was decided, why, and what evidence it rests on. Supporting research lives in `docs/research/`.
 
+## 2026-09-23 — Package split
+
+### D37: The Android provider moves to its own package, `@taaltreelabs/on-device-llm-android`
+
+Maintainer call, made independently of the wave-2 hardware spike this package's own DECISIONS.md had queued up (the local `android-provider` branch's D33–D36 and the "Packaging tripwires" register). The reasoning is naming and honesty, not engineering risk: this package's name, `@taaltreelabs/on-device-llm`, promises on-device-and-private, and Google's ML Kit GenAI terms for the Android engine (Gemini Nano) carry an asterisk that promise cannot silently absorb — metrics telemetry sent to Google, plus a pass-through disclosure duty onto the consuming app's own users. Apple's FoundationModels path has neither: no network calls, nothing sent to Apple, no disclosure duty. A single package cannot make one honest privacy claim when its two providers behave that differently, so the provider whose terms carry the asterisk gets its own, separately-named home instead of a footnote.
+
+**What moved** (to `github.com/taaltreelabs/on-device-llm-android`, built by a separate agent in parallel with this split): the Kotlin bridge module and its 60 JVM unit tests, the `src/android` TypeScript wrapper that existed only on the local `android-provider` branch, the `docs/research/android-genai.md` recon document, and decisions D33–D36 together with the PROVISIONAL register they anchor — all of it now lives, and continues to evolve, in the companion repo. None of that ever reached `origin/main`, so this split touches no code here beyond the Apple resolver hardening below.
+
+**What stayed**: `src/apple/native/resolve.ts`'s `Platform.OS === 'ios'` gate (added on `android-provider` as commit `6b19aa9`, ported here) stays as defense-in-depth. It no longer guards against a same-named, wire-identical Kotlin module living in this repo — that module is gone from this package's universe entirely, and the companion package's own Android provider deliberately registers under a different native-module name (`OnDeviceLlmAndroid`) so it can never collide. But duck-typing still cannot prove a platform, only a shape, so the gate remains: cheap, load-bearing, and worth the comment warning future refactors not to remove it for looking unidiomatic.
+
+**Disposition of the open packaging question**: the "Packaging tripwires" register on `android-provider` left one-vs-two-package open pending three wave-2 findings — T1 (firewall fragility under R8/minification), T2 (toolchain coupling from tracking a beta SDK), T3 (release-cadence mismatch between a stable Apple side and a fast-moving Android beta). This decision **resolves** that question by maintainer fiat rather than by the spike answering it: the split happens regardless of what T1–T3 would have shown, because the deciding factor turned out to be naming and disclosure obligations, not build fragility or release cadence. Concretely: **T3 is moot** — a separately-versioned package cannot suffer a cadence mismatch with this one, because there is no shared version to mismatch. **T1 and T2 remain live, but as ordinary technical questions for the new repo's own wave 2**, not as inputs to a decision that has already been made; the `compileOnly` firewall and its R8 keep-rules, and the Kotlin/AGP version coupling, still need the hardware spike — they just no longer gate whether the package is split, only how solid the split package's own build is.
+
+The `android-provider` branch is superseded by this split and is not merged or deleted; it is retained locally for history, since it is the only record of wave 1's Kotlin work prior to its move to the companion repo.
+
 ## 2026-09-22 — Phase 4 (router)
 
 ### D28: The routing policy is declarative data with one narrow escape hatch, and it only picks the *first* provider
