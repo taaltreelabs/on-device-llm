@@ -29,8 +29,41 @@ interface ExpoModuleNamespace {
   requireNativeModule?: (name: string) => unknown;
 }
 
+interface ReactNativeNamespace {
+  Platform?: { OS?: string };
+}
+
 /** `null` = resolution has been attempted and failed. `undefined` = not attempted. */
 let cached: AppleNativeModule | null | undefined;
+
+/**
+ * `true` only when `react-native`'s `Platform.OS` says `'ios'`.
+ *
+ * Defense in depth: only the Swift module may answer on iOS; nothing but
+ * `Platform` can prove where we are. Duck-typing (`isUsable` below) can only
+ * check the shape of whatever `requireNativeModule('OnDeviceLlm')` hands
+ * back, not which platform handed it back — and this package's own template
+ * stub (`android/src/main/java/expo/modules/ondevicellm/OnDeviceLlmModule.kt`)
+ * registers that exact same name on Android, with no functions today. The
+ * separately-packaged on-device Android provider
+ * (`@taaltreelabs/on-device-llm-android`) registers under a different name
+ * (`OnDeviceLlmAndroid`) precisely to avoid ever colliding with this one, but
+ * this gate does not depend on that naming choice holding forever. Do not
+ * remove this in a refactor because `require('react-native')` looks
+ * unidiomatic — it is the load-bearing check.
+ *
+ * Never throws: a Node test runner and a raw ESM loader both fail to resolve
+ * `react-native` at all, which this treats identically to "not iOS".
+ */
+function isIosPlatform(): boolean {
+  try {
+    if (typeof require !== 'function') return false;
+    const reactNative = require('react-native') as ReactNativeNamespace;
+    return reactNative?.Platform?.OS === 'ios';
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Is this object actually our module, rather than a same-named stub?
@@ -67,6 +100,7 @@ export function resolveNativeModule(): AppleNativeModule | undefined {
   if (cached !== undefined) return cached ?? undefined;
   cached = null;
   try {
+    if (!isIosPlatform()) return undefined;
     if (typeof require !== 'function') return undefined;
     const expo = require('expo') as ExpoModuleNamespace;
     if (typeof expo?.requireNativeModule !== 'function') return undefined;
