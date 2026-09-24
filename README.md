@@ -145,6 +145,7 @@ void rollingSummary;
 | React | Optional peer dependency; required only for `.../react` |
 | Runtime dependencies | None |
 | Device | Apple Intelligence-eligible hardware, with Apple Intelligence turned on and the model assets downloaded |
+| Android | Cloud routing (`openai`) works out of the box, same as any other JS runtime. On-device (Gemini Nano) ships separately via [`@taaltreelabs/on-device-llm-android`](https://github.com/taaltreelabs/on-device-llm-android) — see [Android on-device?](#android-on-device). |
 
 Everything except the Apple provider runs anywhere a modern JavaScript runtime does,
 including Node and the browser.
@@ -184,6 +185,21 @@ blocking", not "the next request will succeed"** (D9). See
 `UNKNOWN` is a real, typed value exported from `core`, not a stand-in for zero or
 infinity. The context manager and the router both handle it explicitly rather than
 guessing (D11).
+
+## Privacy
+
+Every provider in this package answers the same question — where does the content
+actually go? — differently enough that "on-device LLM toolkit" cannot be the whole
+privacy story on its own. Here is the honest, per-provider breakdown:
+
+| Provider | Where content goes | Notes |
+| --- | --- | --- |
+| `apple` | Nowhere off the device. Inference runs entirely on-device via Apple's FoundationModels framework. | No network calls, nothing sent to Apple, no disclosure duty. See Apple's own framework documentation for the on-device processing model this provider wraps. |
+| `openai` | Wherever `baseURL` points — the endpoint **you** configure. | This provider does not hardcode OpenAI's servers; it speaks the Chat Completions wire format to whatever host you give it. Whatever that endpoint's own data-handling terms are, they are yours to read, not this package's to soften. Nothing goes anywhere else. |
+| The package itself (`core`, the router, the hooks) | Nowhere. | `core` never logs or transmits message content. The router's `onRoute` callback (`src/core/router/router.ts`) is deliberately content-free — it reports provider ids, error codes, and durations, never a prompt, a response, or an error message that might quote one. |
+
+This is why the Android on-device provider is a separate package rather than a mode of
+this one — see [Android on-device?](#android-on-device) below.
 
 ## Guides
 
@@ -578,6 +594,20 @@ Also look elsewhere if:
 - **You only ever call a cloud model.** You do not need a router or an on-device provider;
   use your vendor's SDK. The context manager alone might still be worth importing from
   `core`.
+
+### Android on-device?
+
+This package ships cloud routing on Android out of the box (the `openai` provider works
+anywhere a modern JavaScript runtime does), but no on-device Android provider. That lives
+in a separate, separately-named companion package:
+[`@taaltreelabs/on-device-llm-android`](https://github.com/taaltreelabs/on-device-llm-android),
+which wraps Gemini Nano via Google's ML Kit GenAI APIs behind the same `LLMProvider`
+contract, so it drops into the same router as a provider like any other. It is packaged
+separately, rather than folded into this one, because ML Kit's terms include metrics
+telemetry sent to Google and a pass-through disclosure duty to your own users — an
+asterisk that this package's "on-device and private" story should not silently absorb.
+It is pre-release and device-allowlisted; read that repo's own README before relying on
+it.
 
 ## Development
 
