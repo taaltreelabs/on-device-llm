@@ -2,6 +2,16 @@
 
 Newest first. Each entry: what was decided, why, and what evidence it rests on. Supporting research lives in `docs/research/`.
 
+## 2026-09-25 — Post-release
+
+### D38: The empty Android module stays in this package
+
+After D37, `android/` holds only a placeholder: a Kotlin `OnDeviceLlmModule` that registers the name `OnDeviceLlm` and defines nothing else, plus its `build.gradle` and manifest (about 550 bytes in the 0.1.1 tarball). It stays, as do `"android"` in `package.json` `files` and the `android` platform in `expo-module.config.json`.
+
+The reason is that an Expo app is almost always built for both platforms, and this package must not break the Android build of an app that uses it only for iOS and the cloud. With the placeholder, Android autolinking finds a real, valid module; the Apple provider's `Platform.OS === 'ios'` gate (D37) reports `unavailable`/`unsupportedPlatform`; and the router falls through to the next provider exactly as it would on an older iPhone. Removing the directory while leaving `android` in the platforms list would point autolinking at a module that does not exist, and removing the platform too is a packaging change whose effect on consumer Android builds we have not measured.
+
+The placeholder must stay empty. It is not the start of an Android provider — that lives in `@taaltreelabs/on-device-llm-android`, under a different native-module name (`OnDeviceLlmAndroid`) so the two can never collide. Revisit only if the placeholder causes a real consumer build problem.
+
 ## 2026-09-23 — Package split
 
 ### D37: The Android provider moves to its own package, `@taaltreelabs/on-device-llm-android`
@@ -243,7 +253,9 @@ Maintainer directive (2026-09-20): target only the current OS releases and their
 
 Confirmed from the iOS 27.1 `.swiftinterface`: `ResponseStream` still yields cumulative snapshots, not deltas. Deltas are the convention of Chat Completions, UI code, and our `openai` provider, so the Apple provider converts. Evidence: `docs/research/sdk-surface.md` §streaming; independently confirmed by fm-proxy and apple-fm-serve notes.
 
-### D6 (tentative, validate in Phase 3): Structured output via JSON Schema normalization in TypeScript + `GenerationSchema` `Codable` decode in Swift
+### D6 (resolved by D23): Structured output via JSON Schema normalization in TypeScript + `GenerationSchema` `Codable` decode in Swift
+
+> **Resolved 2026-09-21 (D23).** The decode path was validated in Phase 3 and is the only path shipped; the `DynamicGenerationSchema` fallback below was never needed. D23 also narrows the *supported* set below the *decodable* one (`pattern` decodes but fails at generation time). The original entry is kept as written.
 
 The SDK dump found `GenerationSchema` decodes a JSON Schema document directly (needs `title`, `additionalProperties`, `required`, Apple's `x-order`; silently drops `minLength`/`maxLength`/`format`/`multipleOf`; rejects `allOf` and `type: ["string","null"]`). Plan of record: normalize/validate the developer's JSON Schema in TypeScript (rejecting the unsupported subset loudly as `invalidRequest`), then decode natively — keeping the fiddly logic in TS per the maintainer's preference. Falls back to `DynamicGenerationSchema` construction (verified capable) if decode proves too limited. Evidence: `docs/research/sdk-surface.md` §schema.
 
