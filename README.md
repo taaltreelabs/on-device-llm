@@ -22,8 +22,17 @@ npm install @taaltreelabs/on-device-llm
 The Apple provider is a native Expo module, so an iOS build needs a development client
 (`npx expo run:ios`), not Expo Go, and the app's iOS deployment target must be **27.0** —
 see [Troubleshooting](#the-native-module-is-missing-at-runtime-though-the-build-was-green).
-A freshly prebuilt Expo 57 app also needs a small native patch before it will launch on the
-iOS 27 SDK — see [the app crashes at launch](#the-app-crashes-at-launch-with-uiscene-life-cycle-is-required).
+Add the package to `plugins` in `app.json` too. Its config plugin applies the native patch a
+freshly prebuilt Expo 57 app needs before it will launch on the iOS 27 SDK — see
+[the app crashes at launch](#the-app-crashes-at-launch-with-uiscene-life-cycle-is-required):
+
+```json
+{
+  "expo": {
+    "plugins": ["@taaltreelabs/on-device-llm"]
+  }
+}
+```
 
 Setup is one router and one hook:
 
@@ -529,7 +538,25 @@ life cycle, and the Expo 57 `prebuild` template still starts React Native from t
 `AppDelegate` with no scene. Any Expo 57 app built with Xcode for iOS 27 hits it, with or
 without this library (DECISIONS.md D40).
 
-**Fix.** Three changes in `ios/<YourApp>/`, the same ones the [example app](example/ios) carries:
+**Fix.** Add the package's config plugin to `app.json` and prebuild again. It applies the
+patch below for you (DECISIONS.md D41):
+
+```json
+{
+  "expo": {
+    "plugins": ["@taaltreelabs/on-device-llm"]
+  }
+}
+```
+
+```bash
+npx expo prebuild --platform ios --clean
+```
+
+The plugin only changes an `AppDelegate.swift` it recognises as Expo's template, and it is
+safe to run again. If yours has been customised, `prebuild` prints a warning from
+`@taaltreelabs/on-device-llm` and leaves the file alone. Then make these three changes in
+`ios/<YourApp>/` by hand — the same ones the [example app](example/ios) carries:
 
 1. In `AppDelegate.swift`, adopt `ExpoReactNativeFactoryProvider` and stop starting React
    Native yourself — build the factory, keep it, and let the scene delegate start it:
@@ -592,8 +619,8 @@ without this library (DECISIONS.md D40).
    ```
 
 Then rebuild (`npx expo run:ios`). A JavaScript reload is not enough, because this is native
-code. `npx expo prebuild --clean` regenerates `ios/` from the template and discards the
-patch, so re-apply it after a clean prebuild.
+code. Without the plugin, `npx expo prebuild --clean` regenerates `ios/` from the template
+and discards a hand-applied patch, so re-apply it after a clean prebuild.
 
 ### `fm serve` behaves oddly during local development
 

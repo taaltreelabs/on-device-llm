@@ -5,7 +5,8 @@
  *
  *   present  — compiled JS + type declarations for every subpath export,
  *              the ios/ sources + podspec, the android/ stub module,
- *              expo-module.config.json, README.md, LICENSE.
+ *              expo-module.config.json, the config plugin (app.plugin.js
+ *              + build/plugin), README.md, LICENSE.
  *   absent   — the example app, the SwiftPM harness, docs/, src/, scripts/,
  *              .github/, and any test file.
  *
@@ -106,6 +107,16 @@ if (iosCoreSwiftFiles.length === 0) {
 
 if (!fileSet.has('expo-module.config.json')) {
   fail('missing required file: expo-module.config.json');
+}
+
+// ---- present: the Expo config plugin (DECISIONS.md D41) ----------------
+
+// `app.plugin.js` is the file Expo resolves for `"plugins": [pkg]`; without it,
+// or without the compiled plugin it requires, prebuild fails in the app.
+for (const p of ['app.plugin.js', 'build/plugin/index.js']) {
+  if (!fileSet.has(p)) {
+    fail(`missing required file: ${p} (the Expo config plugin)`);
+  }
 }
 
 // ---- present: android/ stub module ------------------------------------
