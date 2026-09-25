@@ -9,18 +9,14 @@ read and test, a normalized error taxonomy both providers map onto, and React ho
 wired to all of it. Prompts stay on the device unless your policy sends them elsewhere,
 and the package never logs or transmits prompt or response content.
 
-**Status: pre-release.** Not published to npm; there is no installable version yet, and
-the API may still change. The library itself is complete through the router and hooks —
+**Status: early release (0.1.x).** The API may still change before 1.0. The library itself is complete through the router and hooks —
 see [`docs/plan.md`](docs/plan.md) for the plan and [`DECISIONS.md`](DECISIONS.md) for
 why the API looks the way it does.
 
 ## Quick start
 
-There is no npm release yet, so install from the repository. The `prepare` script builds
-the package on install:
-
 ```bash
-npm install git+https://github.com/taaltreelabs/on-device-llm.git
+npm install @taaltreelabs/on-device-llm
 ```
 
 The Apple provider is a native Expo module, so an iOS build needs a development client
@@ -94,8 +90,6 @@ Native, Expo, or native anywhere in their import graph.
 | `.../openai` | `createOpenAIProvider` for any Chat Completions-compatible endpoint | Nothing but `fetch` | You need a cloud fallback, or a server-side provider |
 | `.../apple` | `createAppleProvider`, backed by the Swift FoundationModels module | RN, Expo, native — all resolved lazily | You want on-device generation |
 | `.../react` | `useAvailability`, `useChat`, `useGenerate` | `react` only | You are building UI |
-
-Two consequences worth stating plainly.
 
 **Importing the package root is safe on every platform.** Nothing resolves the native
 module at load time. On Android, on web, and under Node, `createAppleProvider()` returns
@@ -269,7 +263,7 @@ your own function.
 | Your own `ContextStrategy` | `(messages, environment) => Promise<FitContextResult>` | You have a relevance filter or a domain-specific compaction. Compose it on top of the shipped ones. |
 
 The defaults are 512 tokens reserved for output and a safety margin of 64 tokens when
-counting was exact, **256 when it was estimated** (D10). The margin is never zero, because
+counting is exact, **256 when it is estimated** (D10). The margin is never zero, because
 `countTokens` cannot see the schema, tool declarations, or prompt framing the provider
 adds at request time.
 

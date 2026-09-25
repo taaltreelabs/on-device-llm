@@ -1,0 +1,66 @@
+# Release: push a v* tag and this publishes to npm + creates the GitHub Release.
+#
+#   npm version patch        # bumps package.json, commits, tags vX.Y.Z
+#   git push --follow-tags   # CI takes it from here
+#
+# Auth: preferred is npm Trusted Publishing (OIDC) — one-time setup at
+# npmjs.com → package → Settings → Trusted Publisher → GitHub Actions with
+# repository `taaltreelabs/on-device-llm` and workflow `release.yml`. With
+# that configured, no token secret is needed (npm CLI resolves OIDC via the
+# id-token permission below) and packages get provenance attestations.
+# Until it is configured, an npm Automation token in the NPM_TOKEN repo
+# secret works as the fallback; the env line is harmless when unset.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the GitHub Release
+  id-token: write # npm provenance / trusted publishing
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Tag must match package.json version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $PKG_VERSION"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Gates
+        run: |
+          npm run typecheck
+          npm run lint
+          npm run check:isolation
+          npm run test:ci
+          npm run check:pack
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Create GitHub Release
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

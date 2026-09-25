@@ -98,5 +98,8 @@
     "react-native": {
       "optional": true
     }
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
