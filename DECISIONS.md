@@ -2,6 +2,22 @@
 
 Newest first. Each entry: what was decided, why, and what evidence it rests on. Supporting research lives in `docs/research/`.
 
+## 2026-09-25 — Post-release
+
+### D39: A tool's parameters may be an empty object; a structured-output schema still may not
+
+0.1.1 rejected every tool that takes no arguments. `normalizeJsonSchema` refuses an object with no properties, which is right for structured output (a schema with nothing to generate is a mistake) but wrong for tool parameters, where `{ type: 'object', properties: {} }` is the standard way to declare "no arguments" and is the shape `docs/tools.md` itself shows. Found by the example app's battery-tool demo failing with `invalidRequest` on the first post-release run.
+
+The normalizer now takes `allowEmptyRootObject`, which only the Apple provider's tool-parameter encoding sets. It applies to the **root only**: a nested empty object is still rejected, because a property the model must fill with an object that has no fields is still a mistake. Measured against the live model before shipping, not assumed: the document the encoder emits (`properties: {}`, `required: []`, `x-order: []`, `additionalProperties: false`) decodes, and the model calls the tool with `{}` and answers from its result (`harness/Sources/Runner/ToolChecks.swift`, "a tool with no arguments round-trips").
+
+### D38: The empty Android module stays in this package
+
+After D37, `android/` holds only a placeholder: a Kotlin `OnDeviceLlmModule` that registers the name `OnDeviceLlm` and defines nothing else, plus its `build.gradle` and manifest (about 550 bytes in the 0.1.1 tarball). It stays, as do `"android"` in `package.json` `files` and the `android` platform in `expo-module.config.json`.
+
+The reason is that an Expo app is almost always built for both platforms, and this package must not break the Android build of an app that uses it only for iOS and the cloud. With the placeholder, Android autolinking finds a real, valid module; the Apple provider's `Platform.OS === 'ios'` gate (D37) reports `unavailable`/`unsupportedPlatform`; and the router falls through to the next provider exactly as it would on an older iPhone. Removing the directory while leaving `android` in the platforms list would point autolinking at a module that does not exist, and removing the platform too is a packaging change whose effect on consumer Android builds we have not measured.
+
+The placeholder must stay empty. It is not the start of an Android provider — that lives in `@taaltreelabs/on-device-llm-android`, under a different native-module name (`OnDeviceLlmAndroid`) so the two can never collide. Revisit only if the placeholder causes a real consumer build problem.
+
 ## 2026-09-23 — Package split
 
 ### D37: The Android provider moves to its own package, `@taaltreelabs/on-device-llm-android`
@@ -243,7 +259,9 @@ Maintainer directive (2026-09-20): target only the current OS releases and their
 
 Confirmed from the iOS 27.1 `.swiftinterface`: `ResponseStream` still yields cumulative snapshots, not deltas. Deltas are the convention of Chat Completions, UI code, and our `openai` provider, so the Apple provider converts. Evidence: `docs/research/sdk-surface.md` §streaming; independently confirmed by fm-proxy and apple-fm-serve notes.
 
-### D6 (tentative, validate in Phase 3): Structured output via JSON Schema normalization in TypeScript + `GenerationSchema` `Codable` decode in Swift
+### D6 (resolved by D23): Structured output via JSON Schema normalization in TypeScript + `GenerationSchema` `Codable` decode in Swift
+
+> **Resolved 2026-09-21 (D23).** The decode path was validated in Phase 3 and is the only path shipped; the `DynamicGenerationSchema` fallback below was never needed. D23 also narrows the *supported* set below the *decodable* one (`pattern` decodes but fails at generation time). The original entry is kept as written.
 
 The SDK dump found `GenerationSchema` decodes a JSON Schema document directly (needs `title`, `additionalProperties`, `required`, Apple's `x-order`; silently drops `minLength`/`maxLength`/`format`/`multipleOf`; rejects `allOf` and `type: ["string","null"]`). Plan of record: normalize/validate the developer's JSON Schema in TypeScript (rejecting the unsupported subset loudly as `invalidRequest`), then decode natively — keeping the fiddly logic in TS per the maintainer's preference. Falls back to `DynamicGenerationSchema` construction (verified capable) if decode proves too limited. Evidence: `docs/research/sdk-surface.md` §schema.
 

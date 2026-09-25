@@ -191,6 +191,7 @@ export function buildNativeRequest(
         providerId,
         label: `the parameters for tool "${tool.name}"`,
         rootName: `${tool.name}Arguments`,
+        allowEmptyRootObject: true,
       }),
     });
   }

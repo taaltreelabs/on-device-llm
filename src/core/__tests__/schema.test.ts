@@ -164,6 +164,25 @@ describe('normalizeJsonSchema', () => {
     ).toMatch(/lists "b"/);
   });
 
+  it('accepts an empty root object only when asked to (tool parameters with no arguments)', () => {
+    const empty: JsonSchema = { type: 'object', properties: {}, additionalProperties: false };
+    const { root } = normalizeJsonSchema(empty, { allowEmptyRootObject: true, rootName: 'Args' });
+    expect(root).toMatchObject({ kind: 'object', name: 'Args', properties: [] });
+    // The allowance is for the root only: a nested empty object is still a mistake.
+    expect(() =>
+      normalizeJsonSchema(
+        {
+          type: 'object',
+          properties: {
+            options: { type: 'object', properties: {} },
+            list: { type: 'array', items: { type: 'object', properties: {} } },
+          },
+        },
+        { allowEmptyRootObject: true }
+      )
+    ).toThrowError(/at least one property \(at schema\.options\)/);
+  });
+
   it('rejects inverted bounds', () => {
     expect(reject({ type: 'integer', minimum: 10, maximum: 1 })).toMatch(/exceeds `maximum`/);
     expect(reject({ type: 'array', items: { type: 'string' }, minItems: 5, maxItems: 2 })).toMatch(

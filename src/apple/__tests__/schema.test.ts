@@ -114,6 +114,28 @@ describe('encodeAppleSchema', () => {
     expect((JSON.parse(json) as { title: string }).title).toBe('getWeatherArguments');
   });
 
+  it('encodes a no-argument tool as an empty object carrying every key the decoder needs', () => {
+    const json = encodeAppleSchema(
+      { type: 'object', properties: {}, additionalProperties: false },
+      {
+        providerId: 'apple',
+        label: 'tool parameters',
+        rootName: 'getBatteryLevelArguments',
+        allowEmptyRootObject: true,
+      }
+    );
+    // The exact document harness/Sources/Runner/ToolChecks.swift verifies against the live model.
+    expect(JSON.parse(json)).toEqual({
+      type: 'object',
+      title: 'getBatteryLevelArguments',
+      properties: {},
+      required: [],
+      'x-order': [],
+      additionalProperties: false,
+    });
+    expect(() => encode({ type: 'object', properties: {} })).toThrowError(/at least one property/);
+  });
+
   it('passes the normalizer rejections through with the schema label in the path', () => {
     try {
       encodeAppleSchema(
