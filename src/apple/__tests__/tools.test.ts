@@ -401,6 +401,32 @@ describe('tool calling over the bridge', () => {
     await withDeadline(iterator.next(), 'finish');
   });
 
+  it('accepts a tool that takes no arguments', async () => {
+    const native = new FakeNativeModule();
+    const provider = new AppleProvider({}, () => native);
+    const stream = provider.stream({
+      messages: [{ role: 'user', content: 'battery?' }],
+      tools: [
+        {
+          name: 'getBatteryLevel',
+          description: 'battery',
+          parameters: { type: 'object', properties: {}, additionalProperties: false },
+          execute: () => ({ level: 0.12 }),
+        },
+      ],
+    });
+    const next = stream[Symbol.asyncIterator]().next();
+    await withDeadline(native.startStreamCalled, 'startStream');
+    const tools = native.calls.startStream[0]![5] as { parametersJson: string }[];
+    expect(JSON.parse(tools[0]!.parametersJson)).toMatchObject({
+      title: 'getBatteryLevelArguments',
+      properties: {},
+      'x-order': [],
+    });
+    finishEvent(native, 'ok');
+    await withDeadline(next, 'finish');
+  });
+
   it('rejects a tool with no handler before anything starts', () => {
     const native = new FakeNativeModule();
     const provider = new AppleProvider({}, () => native);

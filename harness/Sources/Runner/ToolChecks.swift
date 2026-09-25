@@ -121,6 +121,37 @@ func runToolChecks(_ harness: Harness) async {
     try expectEqual(await registry.pendingCount, 0, "pending tool calls after finish")
   }
 
+  // What `encodeAppleSchema` emits for `parameters: { type: 'object',
+  // properties: {} }`, the documented shape of a tool that takes no arguments.
+  await harness.check("a tool with no arguments round-trips") {
+    let registry = ToolCallRegistry()
+    let log = EventLog { event in
+      guard case let .toolCall(callId, _, _) = event else { return }
+      Task { await registry.resolve(callId: callId, result: "Battery is at 12% and not charging.") }
+    }
+    let batteryTool: [String: String] = [
+      "name": "getBatteryLevel",
+      "description": "Reads the current battery level and charging state. Always call this before answering.",
+      "parametersJson": SchemaFixtures.noArgumentToolParameters,
+    ]
+    let request = try makeRequest(
+      [(.user, "Check the battery with the tool, then say in one sentence whether I should charge.")],
+      tools: [batteryTool]
+    )
+    await GenerationEngine.stream(
+      request, requestId: "harness-tool-no-args", toolRegistry: registry, emit: log.emit)
+
+    guard let finish = log.finish else {
+      throw CheckFailure(message: "no finish event (error: \(String(describing: log.error)))")
+    }
+    try expect(!log.toolCalls.isEmpty, "the model never called the tool")
+    try expectEqual(log.toolCalls[0].toolName, "getBatteryLevel", "tool name")
+    try expect(
+      finish.text.contains("12") || finish.text.lowercased().contains("charg"),
+      "the answer ignored the tool result: \(finish.text)")
+    try expectEqual(await registry.pendingCount, 0, "pending tool calls after finish")
+  }
+
   await harness.check("a handler that never answers times the request out") {
     let registry = ToolCallRegistry()
     let log = EventLog()  // nobody resolves anything

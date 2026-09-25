@@ -44,12 +44,19 @@ function invalid(message: string, providerId: string): LLMError {
  */
 export function encodeAppleSchema(
   schema: JsonSchema,
-  options: { readonly providerId: string; readonly label: string; readonly rootName?: string }
+  options: {
+    readonly providerId: string;
+    readonly label: string;
+    readonly rootName?: string;
+    /** Tool parameters only: a tool that takes no arguments has an empty root object. */
+    readonly allowEmptyRootObject?: boolean;
+  }
 ): string {
-  const { providerId, label, rootName } = options;
+  const { providerId, label, rootName, allowEmptyRootObject } = options;
   const normalized = normalizeJsonSchema(schema, {
     providerId,
     ...(rootName !== undefined ? { rootName } : {}),
+    ...(allowEmptyRootObject === true ? { allowEmptyRootObject } : {}),
   });
   const document = encodeNode(normalized.root, { providerId, label, path: label });
   return JSON.stringify(document);

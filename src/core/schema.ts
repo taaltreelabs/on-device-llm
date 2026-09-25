@@ -151,6 +151,14 @@ export interface NormalizeSchemaOptions {
   readonly rootName?: string;
   /** Provider id attached to the thrown `LLMError`. */
   readonly providerId?: string;
+  /**
+   * Accept a root object with no properties. Off by default, because a
+   * structured-output schema with nothing to generate is a mistake; on for
+   * tool parameters, where `{ type: 'object', properties: {} }` is how a tool
+   * that takes no arguments is declared. Nested objects still need at least
+   * one property.
+   */
+  readonly allowEmptyRootObject?: boolean;
 }
 
 function fail(path: string, message: string, providerId: string | undefined): never {
@@ -198,6 +206,7 @@ export function normalizeJsonSchema(
     dropped,
     providerId,
     visiting: new Set<string>(),
+    allowEmptyObject: options.allowEmptyRootObject === true,
   });
 
   return { root, dropped };
@@ -212,6 +221,8 @@ interface Context {
   readonly providerId: string | undefined;
   /** `$ref` names currently being expanded, so a cycle is an error, not a hang. */
   readonly visiting: Set<string>;
+  /** Whether this node may be an object with no properties (the root of tool parameters only). */
+  readonly allowEmptyObject: boolean;
 }
 
 function collectDefs(schema: JsonSchema): Record<string, JsonSchema> {
@@ -364,7 +375,7 @@ function normalizeObject(node: JsonSchema, context: Context): ObjectNode {
     );
   }
   const entries = Object.entries(properties as Record<string, JsonSchema>);
-  if (entries.length === 0) {
+  if (entries.length === 0 && !context.allowEmptyObject) {
     fail(context.path, 'An object schema needs at least one property', context.providerId);
   }
   if (node.additionalProperties === true) {
@@ -404,6 +415,7 @@ function normalizeObject(node: JsonSchema, context: Context): ObjectNode {
         ...context,
         path: `${context.path}.${name}`,
         name: `${sanitizeName(title)}_${sanitizeName(name)}`,
+        allowEmptyObject: false,
       }),
     })),
   };
@@ -439,6 +451,7 @@ function normalizeArray(node: JsonSchema, context: Context): ArrayNode {
       ...context,
       path: `${context.path}[]`,
       name: `${context.name}_Item`,
+      allowEmptyObject: false,
     }),
     ...(minItems !== undefined ? { minItems } : {}),
     ...(maxItems !== undefined ? { maxItems } : {}),

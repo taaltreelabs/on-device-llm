@@ -102,6 +102,17 @@ enum SchemaFixtures {
       "additionalProperties": false
     }
     """
+
+  static let noArgumentToolParameters = """
+    {
+      "type": "object",
+      "title": "getBatteryLevelArguments",
+      "properties": {},
+      "required": [],
+      "x-order": [],
+      "additionalProperties": false
+    }
+    """
 }
 
 func runSchemaChecks(_ harness: Harness) async {

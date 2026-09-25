@@ -4,6 +4,12 @@ Newest first. Each entry: what was decided, why, and what evidence it rests on. 
 
 ## 2026-09-25 — Post-release
 
+### D39: A tool's parameters may be an empty object; a structured-output schema still may not
+
+0.1.1 rejected every tool that takes no arguments. `normalizeJsonSchema` refuses an object with no properties, which is right for structured output (a schema with nothing to generate is a mistake) but wrong for tool parameters, where `{ type: 'object', properties: {} }` is the standard way to declare "no arguments" and is the shape `docs/tools.md` itself shows. Found by the example app's battery-tool demo failing with `invalidRequest` on the first post-release run.
+
+The normalizer now takes `allowEmptyRootObject`, which only the Apple provider's tool-parameter encoding sets. It applies to the **root only**: a nested empty object is still rejected, because a property the model must fill with an object that has no fields is still a mistake. Measured against the live model before shipping, not assumed: the document the encoder emits (`properties: {}`, `required: []`, `x-order: []`, `additionalProperties: false`) decodes, and the model calls the tool with `{}` and answers from its result (`harness/Sources/Runner/ToolChecks.swift`, "a tool with no arguments round-trips").
+
 ### D38: The empty Android module stays in this package
 
 After D37, `android/` holds only a placeholder: a Kotlin `OnDeviceLlmModule` that registers the name `OnDeviceLlm` and defines nothing else, plus its `build.gradle` and manifest (about 550 bytes in the 0.1.1 tarball). It stays, as do `"android"` in `package.json` `files` and the `android` platform in `expo-module.config.json`.
