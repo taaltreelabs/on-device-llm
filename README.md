@@ -552,7 +552,7 @@ npx expo prebuild --platform ios --clean
 The plugin only changes an `AppDelegate.swift` it recognises as Expo's template, and it is
 safe to run again. If yours has been customised, `prebuild` prints a warning from
 `@taaltreelabs/on-device-llm` and leaves the file alone. Then make these three changes in
-`ios/<YourApp>/` by hand — the same ones the [example app](example/ios) carries:
+`ios/<YourApp>/` by hand — the same edits the plugin makes:
 
 1. In `AppDelegate.swift`, adopt `ExpoReactNativeFactoryProvider` and stop starting React
    Native yourself — build the factory, keep it, and let the scene delegate start it:

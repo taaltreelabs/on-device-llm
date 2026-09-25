@@ -1,7 +1,12 @@
 /**
- * The config plugin's source transforms (DECISIONS.md D41). The fixture is the
- * AppDelegate.swift a pristine `expo prebuild` of an Expo 57 app generates;
- * the example app's hand-patched one is the reference for the expected result.
+ * The config plugin's source transforms (DECISIONS.md D41). Both fixtures are
+ * committed, because `example/ios` is prebuild output and not in git:
+ *
+ * - `expo-57-AppDelegate.swift` — what a pristine `expo prebuild` of an Expo 57
+ *   app generates;
+ * - `expo-57-AppDelegate.scene.swift` — the same file migrated by hand to the
+ *   scene life cycle, the version verified to launch on iOS 27 before the
+ *   plugin existed (D40), with its `SceneDelegate` in a separate file.
  */
 
 import fs from 'fs';
@@ -19,8 +24,8 @@ const template = fs.readFileSync(
   path.join(__dirname, 'fixtures', 'expo-57-AppDelegate.swift'),
   'utf8'
 );
-const exampleAppDelegate = fs.readFileSync(
-  path.join(__dirname, '../../../example/ios/ondevicellmexample/AppDelegate.swift'),
+const handMigrated = fs.readFileSync(
+  path.join(__dirname, 'fixtures', 'expo-57-AppDelegate.scene.swift'),
   'utf8'
 );
 
@@ -33,13 +38,13 @@ function code(source: string): string {
 }
 
 describe('patchAppDelegate', () => {
-  it('turns the Expo 57 template into the example app’s scene-based AppDelegate', () => {
+  it('turns the Expo 57 template into the hand-migrated, scene-based AppDelegate', () => {
     const patch = patchAppDelegate(template);
     expect(patch.warning).toBeUndefined();
-    // Same code as the hand-patched example, plus the SceneDelegate that the
-    // example keeps in its own file.
+    // Same code as the hand migration, plus the SceneDelegate that it keeps
+    // in its own file.
     expect(code(patch.contents)).toBe(
-      code(exampleAppDelegate + '\nclass SceneDelegate: ExpoAppSceneDelegate {}\n')
+      code(handMigrated + '\nclass SceneDelegate: ExpoAppSceneDelegate {}\n')
     );
   });
 
@@ -69,10 +74,10 @@ describe('patchAppDelegate', () => {
   });
 
   it('adds no second SceneDelegate when another file already declares one', () => {
-    // The example app: patched by hand, SceneDelegate in SceneDelegate.swift.
-    const patch = patchAppDelegate(exampleAppDelegate, { sceneDelegateDeclaredElsewhere: true });
+    // A hand-migrated app, with SceneDelegate in SceneDelegate.swift.
+    const patch = patchAppDelegate(handMigrated, { sceneDelegateDeclaredElsewhere: true });
     expect(patch.warning).toBeUndefined();
-    expect(patch.contents).toBe(exampleAppDelegate);
+    expect(patch.contents).toBe(handMigrated);
     // Same for a fresh template whose SceneDelegate lives elsewhere.
     expect(
       declaresSceneDelegate(

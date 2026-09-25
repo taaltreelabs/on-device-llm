@@ -6,7 +6,7 @@
  * use UIKit's scene-based life cycle, and the Expo 57 `prebuild` template
  * still starts React Native from `AppDelegate` with no scene, so every fresh
  * app crashes at launch with "UIScene life cycle is required for apps built
- * with this SDK". The fix is the one the example app carries by hand:
+ * with this SDK". The fix is the hand migration verified on iOS 27 in D40:
  *
  * 1. `AppDelegate` adopts `ExpoReactNativeFactoryProvider` and names the
  *    module, so the scene delegate can find the factory it built;
@@ -59,7 +59,7 @@ export function declaresSceneDelegate(source: string): boolean {
 export interface PatchAppDelegateOptions {
   /**
    * Another Swift file in the app target already declares `SceneDelegate` (a
-   * `SceneDelegate.swift` from a hand-applied patch, as in the example app).
+   * `SceneDelegate.swift` from a hand-applied patch).
    * Declaring a second one would not compile.
    */
   readonly sceneDelegateDeclaredElsewhere?: boolean;
