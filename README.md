@@ -22,6 +22,8 @@ npm install @taaltreelabs/on-device-llm
 The Apple provider is a native Expo module, so an iOS build needs a development client
 (`npx expo run:ios`), not Expo Go, and the app's iOS deployment target must be **27.0** —
 see [Troubleshooting](#the-native-module-is-missing-at-runtime-though-the-build-was-green).
+A freshly prebuilt Expo 57 app also needs a small native patch before it will launch on the
+iOS 27 SDK — see [the app crashes at launch](#the-app-crashes-at-launch-with-uiscene-life-cycle-is-required).
 
 Setup is one router and one hook:
 
@@ -512,6 +514,86 @@ default is much lower — `pod install` **silently omits the module entirely**:
 iOS 16.4, but module 'OnDeviceLlm' has a minimum deployment target of iOS 27.0"*. Check
 `Podfile.lock` for an `OnDeviceLlm` entry as the confirmation step — a green build is not
 one.
+
+### The app crashes at launch with "UIScene life cycle is required"
+
+**Symptom.** A new Expo app builds and installs, then closes immediately on launch — on a
+device and in the Simulator alike — with this in the logs:
+
+```text
+Application failed to launch: UIScene life cycle is required for apps built with this SDK.
+```
+
+**Cause.** Not this package: apps built with the iOS 27 SDK must use UIKit's scene-based
+life cycle, and the Expo 57 `prebuild` template still starts React Native from the
+`AppDelegate` with no scene. Any Expo 57 app built with Xcode for iOS 27 hits it, with or
+without this library (DECISIONS.md D40).
+
+**Fix.** Three changes in `ios/<YourApp>/`, the same ones the [example app](example/ios) carries:
+
+1. In `AppDelegate.swift`, adopt `ExpoReactNativeFactoryProvider` and stop starting React
+   Native yourself — build the factory, keep it, and let the scene delegate start it:
+
+   ```swift
+   @main
+   class AppDelegate: ExpoAppDelegate, ExpoReactNativeFactoryProvider {
+     var window: UIWindow?
+
+     var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
+     var reactNativeFactory: RCTReactNativeFactory?
+     var reactNativeFactoryModuleName: String { "main" }
+
+     public override func application(
+       _ application: UIApplication,
+       didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+     ) -> Bool {
+       let delegate = ReactNativeDelegate()
+       let factory = ExpoReactNativeFactory(delegate: delegate)
+       delegate.dependencyProvider = RCTAppDependencyProvider()
+
+       reactNativeDelegate = delegate
+       reactNativeFactory = factory
+
+       // No window and no startReactNative(...) here: SceneDelegate does both.
+       return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+     }
+
+     // ...the template's Linking and Universal Links overrides stay as they are.
+   }
+   ```
+
+2. Add a scene delegate. Put it in a new `SceneDelegate.swift` added to the app target, or
+   at the bottom of `AppDelegate.swift` so the Xcode project needs no new file:
+
+   ```swift
+   class SceneDelegate: ExpoAppSceneDelegate {}
+   ```
+
+3. Declare the scene in `Info.plist`:
+
+   ```xml
+   <key>UIApplicationSceneManifest</key>
+   <dict>
+     <key>UIApplicationSupportsMultipleScenes</key>
+     <false/>
+     <key>UISceneConfigurations</key>
+     <dict>
+       <key>UIWindowSceneSessionRoleApplication</key>
+       <array>
+         <dict>
+           <key>UISceneConfigurationName</key>
+           <string>Default Configuration</string>
+           <key>UISceneDelegateClassName</key>
+           <string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+         </dict>
+       </array>
+     </dict>
+   </dict>
+   ```
+
+Then rebuild (`npx expo run:ios`). A JavaScript reload is not enough, because this is native
+code. `npx expo prebuild --clean` regenerates `ios/` from the template and discards the
+patch, so re-apply it after a clean prebuild.
 
 ### `fm serve` behaves oddly during local development
 
