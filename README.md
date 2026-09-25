@@ -9,18 +9,14 @@ read and test, a normalized error taxonomy both providers map onto, and React ho
 wired to all of it. Prompts stay on the device unless your policy sends them elsewhere,
 and the package never logs or transmits prompt or response content.
 
-**Status: pre-release.** Not published to npm; there is no installable version yet, and
-the API may still change. The library itself is complete through the router and hooks —
+**Status: early release (0.1.x).** The API may still change before 1.0. The library itself is complete through the router and hooks —
 see [`docs/plan.md`](docs/plan.md) for the plan and [`DECISIONS.md`](DECISIONS.md) for
 why the API looks the way it does.
 
 ## Quick start
 
-There is no npm release yet, so install from the repository. The `prepare` script builds
-the package on install:
-
 ```bash
-npm install git+https://github.com/taaltreelabs/on-device-llm.git
+npm install @taaltreelabs/on-device-llm
 ```
 
 The Apple provider is a native Expo module, so an iOS build needs a development client
