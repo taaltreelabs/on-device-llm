@@ -91,8 +91,6 @@ Native, Expo, or native anywhere in their import graph.
 | `.../apple` | `createAppleProvider`, backed by the Swift FoundationModels module | RN, Expo, native — all resolved lazily | You want on-device generation |
 | `.../react` | `useAvailability`, `useChat`, `useGenerate` | `react` only | You are building UI |
 
-Two consequences worth stating plainly.
-
 **Importing the package root is safe on every platform.** Nothing resolves the native
 module at load time. On Android, on web, and under Node, `createAppleProvider()` returns
 a provider that reports `unavailable` with reason `unsupportedPlatform` and whose
@@ -265,7 +263,7 @@ your own function.
 | Your own `ContextStrategy` | `(messages, environment) => Promise<FitContextResult>` | You have a relevance filter or a domain-specific compaction. Compose it on top of the shipped ones. |
 
 The defaults are 512 tokens reserved for output and a safety margin of 64 tokens when
-counting was exact, **256 when it was estimated** (D10). The margin is never zero, because
+counting is exact, **256 when it is estimated** (D10). The margin is never zero, because
 `countTokens` cannot see the schema, tool declarations, or prompt framing the provider
 adds at request time.
 
