@@ -15,6 +15,16 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # The release button: Actions -> Release -> Run workflow. CI bumps the
+  # version, commits, tags, pushes, and continues straight into the gates
+  # and publish below — the full release from one click.
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump'
+        required: true
+        type: choice
+        options: [patch, minor, major]
 
 permissions:
   contents: write # create the GitHub Release
@@ -38,7 +48,28 @@ jobs:
         with:
           node-version: 24
 
+      # Button mode only: bump, commit, tag, push. GitHub's recursion guard
+      # means this tag push cannot re-trigger workflows, which is exactly
+      # right — THIS run carries on to publish.
+      - name: Bump version (release button)
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm version "${{ inputs.bump }}" -m "release: v%s"
+          git push --follow-tags origin "HEAD:${{ github.ref_name }}"
+
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=v$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Tag must match package.json version
+        if: github.event_name == 'push'
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
           TAG_VERSION="${GITHUB_REF_NAME#v}"
@@ -62,6 +93,6 @@ jobs:
         run: npm publish --provenance --access public
 
       - name: Create GitHub Release
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        run: gh release create "${{ steps.tag.outputs.tag }}" --generate-notes --verify-tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
