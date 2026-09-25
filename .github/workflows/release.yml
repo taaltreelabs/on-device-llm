@@ -8,8 +8,8 @@
 # repository `taaltreelabs/on-device-llm` and workflow `release.yml`. With
 # that configured, no token secret is needed (npm CLI resolves OIDC via the
 # id-token permission below) and packages get provenance attestations.
-# Until it is configured, an npm Automation token in the NPM_TOKEN repo
-# secret works as the fallback; the env line is harmless when unset.
+# Trusted Publishing is configured for this package (2026-09-25), so no
+# token secret exists or is needed.
 name: Release
 
 on:
@@ -30,10 +30,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 24 bundles npm >= 11.5, which resolves npm Trusted Publishing
+      # (OIDC) automatically via the id-token permission — no registry-url,
+      # no token env: setup-node's registry-url writes an .npmrc that demands
+      # a NODE_AUTH_TOKEN and fails config substitution before OIDC can run.
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
+          node-version: 24
 
       - name: Tag must match package.json version
         run: |
@@ -57,8 +60,6 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create GitHub Release
         run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
