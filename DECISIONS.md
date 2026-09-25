@@ -4,6 +4,17 @@ Newest first. Each entry: what was decided, why, and what evidence it rests on. 
 
 ## 2026-09-25 — Post-release
 
+### D40: Phase 3's physical-device acceptance passed, against the published 0.1.2
+
+`docs/plan.md` Phase 3 requires the maintainer to run the example app on a physical device, because simulator behaviour is not evidence for performance or availability handling. Run on an iPhone 17 Pro Max, iOS 27.0, with Apple Intelligence enabled. The app code was the example's, but the library was **`@taaltreelabs/on-device-llm@0.1.2` installed from npm** into a freshly prebuilt Expo 57 app, not the repo source the example normally links. That makes this a test of the published tarball too: the pod, the `build/` subpath exports and the type declarations all came from npm.
+
+All passed, every reply "via apple": streamed chat; cancel mid-reply, with the next turn working normally; the JSON demo matching its schema; the tool demo calling a no-argument tool with `{}` (the D39 fix); multi-turn memory, and forgetting after the new Clear button; background and return during and after a reply; and a Polish prompt, answered in Polish on-device, matching what D19 recorded on the Mac. `supportsLocale` stays the only honest locale signal.
+
+Two findings came out of building that fresh consumer app, neither in the library:
+
+- **The Expo 57 `prebuild` template crashes at launch on the iOS 27 SDK.** It runs `UIScene life cycle is required for apps built with this SDK` because the template still starts React Native from `AppDelegate` without a scene. The example app had been hand-patched long ago (a `SceneDelegate: ExpoAppSceneDelegate`, a `UIApplicationSceneManifest` in `Info.plist`, and an `AppDelegate` that builds the factory but starts nothing), which is why it never showed up here. Every new consumer following the README quick start will hit it. Like D22, it is a trap to document rather than a library defect; how to address it (README section vs. a config plugin) is open.
+- **The example imported `expo-constants` without declaring it.** It resolved from the repo root's `node_modules`. It is now listed in `example/package.json`.
+
 ### D39: A tool's parameters may be an empty object; a structured-output schema still may not
 
 0.1.1 rejected every tool that takes no arguments. `normalizeJsonSchema` refuses an object with no properties, which is right for structured output (a schema with nothing to generate is a mistake) but wrong for tool parameters, where `{ type: 'object', properties: {} }` is the standard way to declare "no arguments" and is the shape `docs/tools.md` itself shows. Found by the example app's battery-tool demo failing with `invalidRequest` on the first post-release run.
