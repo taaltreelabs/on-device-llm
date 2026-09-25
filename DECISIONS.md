@@ -4,6 +4,35 @@ Newest first. Each entry: what was decided, why, and what evidence it rests on. 
 
 ## 2026-09-25 — Post-release
 
+### D41: The package ships an Expo config plugin that applies the iOS 27 scene life cycle patch
+
+D40 found that every fresh Expo 57 app crashes at launch on the iOS 27 SDK until three native edits are made. A README section alone leaves every new consumer to find it after a crash, and `prebuild --clean` silently undoes a hand-applied patch. So the package now ships a config plugin (`"plugins": ["@taaltreelabs/on-device-llm"]`) that makes the edits during `prebuild`.
+
+It is written like the rest of the package:
+
+- **The transforms are pure functions** in `src/plugin/scene-lifecycle.ts` with no Expo import. `src/plugin/index.ts` only wires them to `withAppDelegate` and `withInfoPlist`. The fixture is the `AppDelegate.swift` a pristine Expo 57 `prebuild` generates, and the main test asserts that the patched result is the same code as the hand migration verified on iOS 27 in D40, which is committed alongside it as a second fixture.
+- **It recognises, or it refuses.** It rewrites only the template's exact start-up block (`#if os(iOS) || os(tvOS)` … `startReactNative` … `#endif`). A customised `AppDelegate`, an Objective-C one, or a half-migrated one (adopts `ExpoReactNativeFactoryProvider` but still starts React Native) is left untouched with a `prebuild` warning that points to the README's manual steps. Guessing at an unknown `AppDelegate` could start React Native twice, which is worse than the crash.
+- **It is idempotent,** because `prebuild` without `--clean` runs mods over their own output. It also adds no `SceneDelegate` when another Swift file next to `AppDelegate.swift` already declares one, as a hand-migrated app does, since a second declaration would not compile. An `Info.plist` that already has a `UIApplicationSceneManifest` is left alone.
+- **`SceneDelegate` goes at the bottom of `AppDelegate.swift`,** not in a new file, so the Xcode project needs no new file reference, which is the fragile part of any iOS config plugin.
+- **Build-time only.** It is loaded through the root `app.plugin.js`, which is also listed in `exports` (Expo resolves the plugin through Node's resolver, which honours the `exports` map) and `files`, and it is not a subpath export: it runs under the Expo CLI and is never bundled into an app. It imports only `expo/config-plugins` (a peer) and Node built-ins, so the package keeps zero runtime dependencies. `check:pack` now requires `app.plugin.js` and `build/plugin/index.js`.
+
+Verified end to end, not just by unit tests: the packed tarball was installed into a fresh app with only the plugin in `app.json`, `prebuild --clean` produced the patched `AppDelegate.swift` and scene manifest, and the app built and launched on an iOS 27.1 Simulator.
+
+The example app now uses the plugin too (`"../app.plugin.js"` in `example/app.json`, a relative path because the example links the package from the repo rather than from `node_modules`), so a clean checkout prebuilds a launchable example and CI's example build exercises the plugin. A local `example/ios` that was migrated by hand is left as it is: the plugin sees the provider and the separate `SceneDelegate.swift` and changes nothing.
+
+The plugin does not set the iOS 27.0 deployment target (D22). That stays with `expo-build-properties`, which owns it and which apps already use.
+
+### D40: Phase 3's physical-device acceptance passed, against the published 0.1.2
+
+`docs/plan.md` Phase 3 requires the maintainer to run the example app on a physical device, because simulator behaviour is not evidence for performance or availability handling. Run on an iPhone 17 Pro Max, iOS 27.0, with Apple Intelligence enabled. The app code was the example's, but the library was **`@taaltreelabs/on-device-llm@0.1.2` installed from npm** into a freshly prebuilt Expo 57 app, not the repo source the example normally links. That makes this a test of the published tarball too: the pod, the `build/` subpath exports and the type declarations all came from npm.
+
+All passed, every reply "via apple": streamed chat; cancel mid-reply, with the next turn working normally; the JSON demo matching its schema; the tool demo calling a no-argument tool with `{}` (the D39 fix); multi-turn memory, and forgetting after the new Clear button; background and return during and after a reply; and a Polish prompt, answered in Polish on-device, matching what D19 recorded on the Mac. `supportsLocale` stays the only honest locale signal.
+
+Two findings came out of building that fresh consumer app, neither in the library:
+
+- **The Expo 57 `prebuild` template crashes at launch on the iOS 27 SDK.** It runs `UIScene life cycle is required for apps built with this SDK` because the template still starts React Native from `AppDelegate` without a scene. It never showed up in the example app because the maintainer's local `example/ios` had been migrated by hand (a `SceneDelegate: ExpoAppSceneDelegate`, a `UIApplicationSceneManifest` in `Info.plist`, and an `AppDelegate` that builds the factory but starts nothing). But `example/ios` is gitignored prebuild output, so that migration existed on one machine only; a clean checkout's example would have crashed the same way. Every new consumer following the README quick start will hit it. Like D22, it is a trap rather than a library defect; D41 addresses it with a config plugin.
+- **The example imported `expo-constants` without declaring it.** It resolved from the repo root's `node_modules`. It is now listed in `example/package.json`.
+
 ### D39: A tool's parameters may be an empty object; a structured-output schema still may not
 
 0.1.1 rejected every tool that takes no arguments. `normalizeJsonSchema` refuses an object with no properties, which is right for structured output (a schema with nothing to generate is a mistake) but wrong for tool parameters, where `{ type: 'object', properties: {} }` is the standard way to declare "no arguments" and is the shape `docs/tools.md` itself shows. Found by the example app's battery-tool demo failing with `invalidRequest` on the first post-release run.

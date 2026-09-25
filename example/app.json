@@ -31,7 +31,8 @@
             "deploymentTarget": "27.0"
           }
         }
-      ]
+      ],
+      "../app.plugin.js"
     ]
   }
 }

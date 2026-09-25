@@ -25,14 +25,16 @@
       "types": "./build/react/index.d.ts",
       "default": "./build/react/index.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./app.plugin.js": "./app.plugin.js"
   },
   "files": [
     "build",
     "ios",
     "android",
     "!android/build",
-    "expo-module.config.json"
+    "expo-module.config.json",
+    "app.plugin.js"
   ],
   "scripts": {
     "build": "node internal/module_scripts/build.js",

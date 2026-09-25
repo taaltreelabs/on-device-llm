@@ -322,6 +322,14 @@ export default function App() {
                 disabled={isGenerating}
               />
             </View>
+            <View style={styles.demosButtonWrapper}>
+              <Button
+                title="Clear"
+                color="#b91c1c"
+                onPress={chat.reset}
+                disabled={isGenerating || chat.messages.length === 0}
+              />
+            </View>
           </View>
 
           <DemoResult

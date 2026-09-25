@@ -22,6 +22,17 @@ npm install @taaltreelabs/on-device-llm
 The Apple provider is a native Expo module, so an iOS build needs a development client
 (`npx expo run:ios`), not Expo Go, and the app's iOS deployment target must be **27.0** —
 see [Troubleshooting](#the-native-module-is-missing-at-runtime-though-the-build-was-green).
+Add the package to `plugins` in `app.json` too. Its config plugin applies the native patch a
+freshly prebuilt Expo 57 app needs before it will launch on the iOS 27 SDK — see
+[the app crashes at launch](#the-app-crashes-at-launch-with-uiscene-life-cycle-is-required):
+
+```json
+{
+  "expo": {
+    "plugins": ["@taaltreelabs/on-device-llm"]
+  }
+}
+```
 
 Setup is one router and one hook:
 
@@ -83,13 +94,13 @@ The package ships one npm module with five entry points. The split is mechanical
 cosmetic: `core` and `openai` are verified on every CI run to have nothing React, React
 Native, Expo, or native anywhere in their import graph.
 
-| Import path | Contains | May import | Use it when |
-| --- | --- | --- | --- |
-| `@taaltreelabs/on-device-llm` | Everything below, re-exported | RN, Expo, native | You are in a React Native app and do not care about the boundary |
-| `.../core` | Types, `LLMProvider`, `LLMError`, context manager, `createRouter`, `normalizeJsonSchema`, `estimateTokens`, `MockProvider` | Nothing (zero runtime dependencies) | Always — this is the API everything else conforms to |
-| `.../openai` | `createOpenAIProvider` for any Chat Completions-compatible endpoint | Nothing but `fetch` | You need a cloud fallback, or a server-side provider |
-| `.../apple` | `createAppleProvider`, backed by the Swift FoundationModels module | RN, Expo, native — all resolved lazily | You want on-device generation |
-| `.../react` | `useAvailability`, `useChat`, `useGenerate` | `react` only | You are building UI |
+| Import path                   | Contains                                                                                                                   | May import                             | Use it when                                                      |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ---------------------------------------------------------------- |
+| `@taaltreelabs/on-device-llm` | Everything below, re-exported                                                                                              | RN, Expo, native                       | You are in a React Native app and do not care about the boundary |
+| `.../core`                    | Types, `LLMProvider`, `LLMError`, context manager, `createRouter`, `normalizeJsonSchema`, `estimateTokens`, `MockProvider` | Nothing (zero runtime dependencies)    | Always — this is the API everything else conforms to             |
+| `.../openai`                  | `createOpenAIProvider` for any Chat Completions-compatible endpoint                                                        | Nothing but `fetch`                    | You need a cloud fallback, or a server-side provider             |
+| `.../apple`                   | `createAppleProvider`, backed by the Swift FoundationModels module                                                         | RN, Expo, native — all resolved lazily | You want on-device generation                                    |
+| `.../react`                   | `useAvailability`, `useChat`, `useGenerate`                                                                                | `react` only                           | You are building UI                                              |
 
 **Importing the package root is safe on every platform.** Nothing resolves the native
 module at load time. On Android, on web, and under Node, `createAppleProvider()` returns
@@ -102,11 +113,7 @@ of the layout. The context manager, the router, the schema normalizer, and the
 OpenAI-compatible provider are usable server-side with no React Native in sight:
 
 ```ts
-import {
-  fitContext,
-  rollingSummary,
-  type Message,
-} from '@taaltreelabs/on-device-llm/core';
+import { fitContext, rollingSummary, type Message } from '@taaltreelabs/on-device-llm/core';
 import { createOpenAIProvider } from '@taaltreelabs/on-device-llm/openai';
 
 const provider = createOpenAIProvider({
@@ -131,15 +138,15 @@ void rollingSummary;
 
 ## Requirements and compatibility
 
-| Requirement | Value |
-| --- | --- |
-| iOS / macOS (on-device model) | **27.0 or newer** (DECISIONS.md D4). iOS 26 shipped the framework; it is deliberately not supported, and reports `unsupportedPlatform`. |
-| Expo SDK | 57 |
-| React Native | 0.86 |
-| React | Optional peer dependency; required only for `.../react` |
-| Runtime dependencies | None |
-| Device | Apple Intelligence-eligible hardware, with Apple Intelligence turned on and the model assets downloaded |
-| Android | Cloud routing (`openai`) works out of the box, same as any other JS runtime. On-device (Gemini Nano) ships separately via [`@taaltreelabs/on-device-llm-android`](https://github.com/taaltreelabs/on-device-llm-android) — see [Android on-device?](#android-on-device). |
+| Requirement                   | Value                                                                                                                                                                                                                                                                    |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| iOS / macOS (on-device model) | **27.0 or newer** (DECISIONS.md D4). iOS 26 shipped the framework; it is deliberately not supported, and reports `unsupportedPlatform`.                                                                                                                                  |
+| Expo SDK                      | 57                                                                                                                                                                                                                                                                       |
+| React Native                  | 0.86                                                                                                                                                                                                                                                                     |
+| React                         | Optional peer dependency; required only for `.../react`                                                                                                                                                                                                                  |
+| Runtime dependencies          | None                                                                                                                                                                                                                                                                     |
+| Device                        | Apple Intelligence-eligible hardware, with Apple Intelligence turned on and the model assets downloaded                                                                                                                                                                  |
+| Android                       | Cloud routing (`openai`) works out of the box, same as any other JS runtime. On-device (Gemini Nano) ships separately via [`@taaltreelabs/on-device-llm-android`](https://github.com/taaltreelabs/on-device-llm-android) — see [Android on-device?](#android-on-device). |
 
 Everything except the Apple provider runs anywhere a modern JavaScript runtime does,
 including Node and the browser.
@@ -149,12 +156,12 @@ including Node and the browser.
 `provider.availability()` answers `{ available: true }` or `{ available: false, reason,
 detail? }`. The reasons:
 
-| Reason | Means | What an app should do |
-| --- | --- | --- |
-| `deviceNotEligible` | The hardware cannot run the model. Also reported when `createAppleProvider({ locale })` names a language the model does not support (D19). | Permanent. Route to the cloud, or hide the on-device feature. |
-| `notEnabled` | Eligible hardware, Apple Intelligence switched off. | Ask the user to enable it in Settings. |
-| `modelNotReady` | Enabled, but assets are still downloading or otherwise not ready. | Transient. Re-check on foreground — `useAvailability`'s `resubscribe` option exists for this. |
-| `unsupportedPlatform` | No such capability here: Android, web, Node, or an OS below the floor. | Permanent for this install. The import still works and the provider still answers politely. |
+| Reason                | Means                                                                                                                                      | What an app should do                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `deviceNotEligible`   | The hardware cannot run the model. Also reported when `createAppleProvider({ locale })` names a language the model does not support (D19). | Permanent. Route to the cloud, or hide the on-device feature.                                 |
+| `notEnabled`          | Eligible hardware, Apple Intelligence switched off.                                                                                        | Ask the user to enable it in Settings.                                                        |
+| `modelNotReady`       | Enabled, but assets are still downloading or otherwise not ready.                                                                          | Transient. Re-check on foreground — `useAvailability`'s `resubscribe` option exists for this. |
+| `unsupportedPlatform` | No such capability here: Android, web, Node, or an OS below the floor.                                                                     | Permanent for this install. The import still works and the provider still answers politely.   |
 
 `unsupportedLocale` is deliberately **not** an availability reason (D7): Apple's enum has
 exactly three cases, and a model that works in English is not "unavailable" because you
@@ -167,14 +174,14 @@ blocking", not "the next request will succeed"** (D9). See
 
 ### Feature support
 
-| | `apple` | `openai` | `MockProvider` |
-| --- | --- | --- | --- |
-| Streaming | Yes, real token deltas | Yes, with a streaming `fetch` injected; otherwise one aggregated delta | Yes, scripted |
-| Structured output | Yes, when the model reports guided generation | Yes (`response_format`), subject to your endpoint | Scripted only |
-| Tool calling | Yes, with timeout and cancellation | **No** — a request carrying `tools` is rejected as `invalidRequest` | No |
-| Token counting | `exact` (native `tokenCount`) | `estimated` (`estimateTokens`) | Configurable |
-| Context window | Reported by the device (4K or 8K depending on the model variant); `UNKNOWN` when the framework cannot say | Whatever you configure; `UNKNOWN` by default | Configurable |
-| Locales | 24 BCP-47 tags, enumerated | `UNKNOWN` unless you configure them | Configurable |
+|                   | `apple`                                                                                                   | `openai`                                                               | `MockProvider` |
+| ----------------- | --------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------- |
+| Streaming         | Yes, real token deltas                                                                                    | Yes, with a streaming `fetch` injected; otherwise one aggregated delta | Yes, scripted  |
+| Structured output | Yes, when the model reports guided generation                                                             | Yes (`response_format`), subject to your endpoint                      | Scripted only  |
+| Tool calling      | Yes, with timeout and cancellation                                                                        | **No** — a request carrying `tools` is rejected as `invalidRequest`    | No             |
+| Token counting    | `exact` (native `tokenCount`)                                                                             | `estimated` (`estimateTokens`)                                         | Configurable   |
+| Context window    | Reported by the device (4K or 8K depending on the model variant); `UNKNOWN` when the framework cannot say | Whatever you configure; `UNKNOWN` by default                           | Configurable   |
+| Locales           | 24 BCP-47 tags, enumerated                                                                                | `UNKNOWN` unless you configure them                                    | Configurable   |
 
 `UNKNOWN` is a real, typed value exported from `core`, not a stand-in for zero or
 infinity. The context manager and the router both handle it explicitly rather than
@@ -186,11 +193,11 @@ Every provider in this package answers the same question — where does the cont
 actually go? — differently enough that "on-device LLM toolkit" cannot be the whole
 privacy story on its own. Here is the honest, per-provider breakdown:
 
-| Provider | Where content goes | Notes |
-| --- | --- | --- |
-| `apple` | Nowhere off the device. Inference runs entirely on-device via Apple's FoundationModels framework. | No network calls, nothing sent to Apple, no disclosure duty. See Apple's own framework documentation for the on-device processing model this provider wraps. |
-| `openai` | Wherever `baseURL` points — the endpoint **you** configure. | This provider does not hardcode OpenAI's servers; it speaks the Chat Completions wire format to whatever host you give it. Whatever that endpoint's own data-handling terms are, they are yours to read, not this package's to soften. Nothing goes anywhere else. |
-| The package itself (`core`, the router, the hooks) | Nowhere. | `core` never logs or transmits message content. The router's `onRoute` callback (`src/core/router/router.ts`) is deliberately content-free — it reports provider ids, error codes, and durations, never a prompt, a response, or an error message that might quote one. |
+| Provider                                           | Where content goes                                                                                | Notes                                                                                                                                                                                                                                                                   |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apple`                                            | Nowhere off the device. Inference runs entirely on-device via Apple's FoundationModels framework. | No network calls, nothing sent to Apple, no disclosure duty. See Apple's own framework documentation for the on-device processing model this provider wraps.                                                                                                            |
+| `openai`                                           | Wherever `baseURL` points — the endpoint **you** configure.                                       | This provider does not hardcode OpenAI's servers; it speaks the Chat Completions wire format to whatever host you give it. Whatever that endpoint's own data-handling terms are, they are yours to read, not this package's to soften. Nothing goes anywhere else.      |
+| The package itself (`core`, the router, the hooks) | Nowhere.                                                                                          | `core` never logs or transmits message content. The router's `onRoute` callback (`src/core/router/router.ts`) is deliberately content-free — it reports provider ids, error codes, and durations, never a prompt, a response, or an error message that might quote one. |
 
 This is why the Android on-device provider is a separate package rather than a mode of
 this one — see [Android on-device?](#android-on-device) below.
@@ -256,11 +263,11 @@ Full guide: [docs/context.md](docs/context.md#the-structured-state-pattern).
 your message array, it returns a new one. Two strategies ship, and a third slot takes
 your own function.
 
-| Strategy | What it does | Choose it when |
-| --- | --- | --- |
-| `slidingWindow` (default) | Drops whole oldest turns until the conversation fits. Pinned messages and the newest turn never go. | Most apps. Free, deterministic, no extra model call. |
-| `rollingSummary` | At 70% of budget, summarizes everything but the newest turns into one `system` message, then keeps trimming if needed. | Long conversations where early context genuinely matters. Costs one model call, and the summarizer is injectable — summarize with the cloud model while chatting on-device. |
-| Your own `ContextStrategy` | `(messages, environment) => Promise<FitContextResult>` | You have a relevance filter or a domain-specific compaction. Compose it on top of the shipped ones. |
+| Strategy                   | What it does                                                                                                           | Choose it when                                                                                                                                                              |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `slidingWindow` (default)  | Drops whole oldest turns until the conversation fits. Pinned messages and the newest turn never go.                    | Most apps. Free, deterministic, no extra model call.                                                                                                                        |
+| `rollingSummary`           | At 70% of budget, summarizes everything but the newest turns into one `system` message, then keeps trimming if needed. | Long conversations where early context genuinely matters. Costs one model call, and the summarizer is injectable — summarize with the cloud model while chatting on-device. |
+| Your own `ContextStrategy` | `(messages, environment) => Promise<FitContextResult>`                                                                 | You have a relevance filter or a domain-specific compaction. Compose it on top of the shipped ones.                                                                         |
 
 The defaults are 512 tokens reserved for output and a safety margin of 64 tokens when
 counting is exact, **256 when it is estimated** (D10). The margin is never zero, because
@@ -326,18 +333,18 @@ token facts the router used.
 
 The default fallback triggers, verbatim from D30:
 
-| Code | Default | Configurable |
-| --- | --- | --- |
-| `unavailable` | **on** | yes |
-| `contextOverflow` | **on** | yes |
-| `network` | **on** | yes |
-| `rateLimited` | **on** | yes |
-| `guardrail` | off | yes |
-| `unsupportedLocale` | **on** | yes |
-| `unknown` + `transient === true` | **on** | yes (`unknownTransient`) |
-| `unknown`, otherwise | off | yes (`unknown`) |
-| `cancelled` | never | **no** |
-| `invalidRequest` | never | **no** |
+| Code                             | Default | Configurable             |
+| -------------------------------- | ------- | ------------------------ |
+| `unavailable`                    | **on**  | yes                      |
+| `contextOverflow`                | **on**  | yes                      |
+| `network`                        | **on**  | yes                      |
+| `rateLimited`                    | **on**  | yes                      |
+| `guardrail`                      | off     | yes                      |
+| `unsupportedLocale`              | **on**  | yes                      |
+| `unknown` + `transient === true` | **on**  | yes (`unknownTransient`) |
+| `unknown`, otherwise             | off     | yes (`unknown`)          |
+| `cancelled`                      | never   | **no**                   |
+| `invalidRequest`                 | never   | **no**                   |
 
 `cancelled` and `invalidRequest` are not fields on `FallbackTriggers` at all: a boolean
 nobody may set to `true` is one that eventually gets set to `true` by accident, so
@@ -508,10 +515,108 @@ default is much lower — `pod install` **silently omits the module entirely**:
 
 **Fix.** Raise `ios.deploymentTarget` to `27.0` (via `expo-build-properties` in
 `app.json`, as the example app does), then reinstall pods. Raise the app target's own
-`IPHONEOS_DEPLOYMENT_TARGET` too, or the app's Swift fails to compile with *"compiling for
-iOS 16.4, but module 'OnDeviceLlm' has a minimum deployment target of iOS 27.0"*. Check
+`IPHONEOS_DEPLOYMENT_TARGET` too, or the app's Swift fails to compile with _"compiling for
+iOS 16.4, but module 'OnDeviceLlm' has a minimum deployment target of iOS 27.0"_. Check
 `Podfile.lock` for an `OnDeviceLlm` entry as the confirmation step — a green build is not
 one.
+
+### The app crashes at launch with "UIScene life cycle is required"
+
+**Symptom.** A new Expo app builds and installs, then closes immediately on launch — on a
+device and in the Simulator alike — with this in the logs:
+
+```text
+Application failed to launch: UIScene life cycle is required for apps built with this SDK.
+```
+
+**Cause.** Not this package: apps built with the iOS 27 SDK must use UIKit's scene-based
+life cycle, and the Expo 57 `prebuild` template still starts React Native from the
+`AppDelegate` with no scene. Any Expo 57 app built with Xcode for iOS 27 hits it, with or
+without this library (DECISIONS.md D40).
+
+**Fix.** Add the package's config plugin to `app.json` and prebuild again. It applies the
+patch below for you (DECISIONS.md D41):
+
+```json
+{
+  "expo": {
+    "plugins": ["@taaltreelabs/on-device-llm"]
+  }
+}
+```
+
+```bash
+npx expo prebuild --platform ios --clean
+```
+
+The plugin only changes an `AppDelegate.swift` it recognises as Expo's template, and it is
+safe to run again. If yours has been customised, `prebuild` prints a warning from
+`@taaltreelabs/on-device-llm` and leaves the file alone. Then make these three changes in
+`ios/<YourApp>/` by hand — the same edits the plugin makes:
+
+1. In `AppDelegate.swift`, adopt `ExpoReactNativeFactoryProvider` and stop starting React
+   Native yourself — build the factory, keep it, and let the scene delegate start it:
+
+   ```swift
+   @main
+   class AppDelegate: ExpoAppDelegate, ExpoReactNativeFactoryProvider {
+     var window: UIWindow?
+
+     var reactNativeDelegate: ExpoReactNativeFactoryDelegate?
+     var reactNativeFactory: RCTReactNativeFactory?
+     var reactNativeFactoryModuleName: String { "main" }
+
+     public override func application(
+       _ application: UIApplication,
+       didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+     ) -> Bool {
+       let delegate = ReactNativeDelegate()
+       let factory = ExpoReactNativeFactory(delegate: delegate)
+       delegate.dependencyProvider = RCTAppDependencyProvider()
+
+       reactNativeDelegate = delegate
+       reactNativeFactory = factory
+
+       // No window and no startReactNative(...) here: SceneDelegate does both.
+       return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+     }
+
+     // ...the template's Linking and Universal Links overrides stay as they are.
+   }
+   ```
+
+2. Add a scene delegate. Put it in a new `SceneDelegate.swift` added to the app target, or
+   at the bottom of `AppDelegate.swift` so the Xcode project needs no new file:
+
+   ```swift
+   class SceneDelegate: ExpoAppSceneDelegate {}
+   ```
+
+3. Declare the scene in `Info.plist`:
+
+   ```xml
+   <key>UIApplicationSceneManifest</key>
+   <dict>
+     <key>UIApplicationSupportsMultipleScenes</key>
+     <false/>
+     <key>UISceneConfigurations</key>
+     <dict>
+       <key>UIWindowSceneSessionRoleApplication</key>
+       <array>
+         <dict>
+           <key>UISceneConfigurationName</key>
+           <string>Default Configuration</string>
+           <key>UISceneDelegateClassName</key>
+           <string>$(PRODUCT_MODULE_NAME).SceneDelegate</string>
+         </dict>
+       </array>
+     </dict>
+   </dict>
+   ```
+
+Then rebuild (`npx expo run:ios`). A JavaScript reload is not enough, because this is native
+code. Without the plugin, `npx expo prebuild --clean` regenerates `ios/` from the template
+and discards a hand-applied patch, so re-apply it after a clean prebuild.
 
 ### `fm serve` behaves oddly during local development
 
@@ -550,16 +655,16 @@ back on; there is no proxy-directory fallback and none is planned.
 
 If you are working against a local checkout the way `example/` does — Metro
 `extraNodeModules` pointing at the repo, `watchFolders` including it — watch for the
-**nested-resolution trap**: `babel.config.js`'s `require('babel-preset-expo')` walks *up*
+**nested-resolution trap**: `babel.config.js`'s `require('babel-preset-expo')` walks _up_
 out of the app's own `node_modules` and can find an older copy at the repo root, paired
 with an older React Native. The symptom is an unrelated-looking transform failure such as
-*"Unable to determine event arguments for onModeChange"*, and `expo export` fails outright.
+_"Unable to determine event arguments for onModeChange"_, and `expo export` fails outright.
 The fix is to add `babel-preset-expo` to the app's own `devDependencies`, pinned to the
 version its `expo` depends on, so local resolution wins.
 
 ## When not to use this
 
-This package is the layer *above* the bridge. If you do not want that layer, several good
+This package is the layer _above_ the bridge. If you do not want that layer, several good
 packages give you the bridge alone, and all of them are MIT-licensed:
 
 - **[`@react-native-ai/apple`](https://github.com/callstackincubator/ai)** — a Vercel AI
