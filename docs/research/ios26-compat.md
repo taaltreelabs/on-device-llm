@@ -160,6 +160,20 @@ compatibility version 1.0.0
 
 `LC_BUILD_VERSION` for the same binary reports `minos 16.4`, `sdk 27.1`. `otool -L` lists FoundationModels as `(…, weak)`.
 
+### Release build evidence
+
+Checked on 2026-09-26, because a Debug build puts the app code in `ondevicellmexample.debug.dylib` while Release links it into the main executable. The example was built as it ships: `-configuration Release -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO`, at the 16.4 default target. The build succeeded with zero warnings from `ios/`. From `otool -l` on the main executable:
+
+```
+          cmd LC_LOAD_WEAK_DYLIB
+      cmdsize 96
+         name /System/Library/Frameworks/FoundationModels.framework/FoundationModels (offset 24)
+```
+
+`LC_BUILD_VERSION` reports `minos 16.4`, `sdk 27.1`. It is the only load command naming FoundationModels. Every other system framework the executable loads is long-standing and exists well below iOS 26 (Accelerate, AudioToolbox, CoreGraphics, CryptoKit, Foundation, ImageIO, UIKit, WebKit and similar; JavaScriptCore is weak too, which is React Native's own choice).
+
+`scripts/check-weak-link.sh` turns this into a regression test. Given an `.app`, it finds the executable from `CFBundleExecutable`, also checks a sibling `*.debug.dylib`, and fails unless every load command naming `FoundationModels.framework` is `LC_LOAD_WEAK_DYLIB`. It passes on both the Release and Debug builds, and fails on a probe compiled for an iOS 27 target, where the reference is strong. CI's `example-ios` job now runs it on both builds, after asserting that `Podfile.lock` contains `OnDeviceLlm` (the D22 silent-drop guard).
+
 ## iOS 26.5 Simulator run (macOS 27.2 host)
 
 This was the first time the iOS 26 code paths had run rather than only compiled. The setup:
@@ -303,11 +317,46 @@ So, now observed rather than only compiled:
 - The legacy mapper's `guardrailViolation` row has now been observed in practice, not only through synthesized errors.
 - A device whose safety model is broken presents as a guardrail trip on every prompt, and a guardrail trip does not fall back. That is the framework's classification, not the bridge's; a caller who wants cloud fallback in that state has to treat repeated `guardrail` results on innocuous prompts as a signal. It is worth knowing, and it is not a change to make on simulator evidence alone.
 
-After each error the hook returned to `idle` and the next send worked, so nothing was left hanging. (An earlier attempt in this run appeared stuck in `streaming` for several minutes; it followed a Fast Refresh edit of `App.tsx` mid-session and did not reproduce on a clean relaunch, so it is recorded as a dev-loop artifact, not a library behaviour.) One cosmetic thing the run showed in the example app: an error mid-turn leaves an empty streaming bubble, because the hook deliberately leaves `streamingText` as-is on failure and the example renders `''` as a bubble.
+After each error the hook returned to `idle` and the next send worked, so nothing was left hanging. (An earlier attempt in this run appeared stuck in `streaming` for several minutes; it followed a Fast Refresh edit of `App.tsx` mid-session and did not reproduce on a clean relaunch, so it is recorded as a dev-loop artifact, not a library behaviour.) One cosmetic thing the run showed in the example app: an error mid-turn leaves an empty streaming bubble, because the hook deliberately leaves `streamingText` as-is on failure and the example renders `''` as a bubble. (Fixed in the example afterwards — see below.)
+
+## iOS 18 Simulator run: below the on-device floor — attempted, blocked before a device existed
+
+The maintainer authorized downloading a pre-26 Simulator runtime so the `unsupportedPlatform`
+path (D42's "16.4 podspec floor" section above) could finally be exercised live rather than
+only typechecked. The attempt did not get as far as a device:
+
+- Host: macOS 27.2 (26B5091g), Xcode 27.1 (27A9269).
+- `xcodebuild -downloadPlatform iOS -buildVersion 18.6` answered "iOS 18.6 is not available for
+  download." The same refusal came back for every other 18.x tried: 18.5, 18.4, 18.3.1, 18.2,
+  18.1, 18.0.
+- `xcodebuild -downloadPlatform iOS` with no version pinned offers only iOS 27.1 and 27.0.
+  `xcrun simctl list runtimes available -j` lists exactly four installable runtimes — 26.0,
+  26.5, 27.0, 27.1 — the same four already on this machine (`xcrun simctl runtime list`: 37.7G
+  across five disk images, two builds of 27.0). No second Xcode is installed, and no runtime
+  bundle is cached under `/Library/Developer/CoreSimulator/Profiles/Runtimes`.
+- Reading: Xcode 27.1's own download catalog simply does not carry an iOS 18.x Simulator
+  runtime. A given Xcode appears to offer only what pairs with roughly its own generation, not
+  the full history back to 18. Reaching a genuinely pre-26 runtime from this machine would need
+  either an older Xcode installation or a runtime `.dmg` fetched by hand from Apple's developer
+  downloads and added with `xcrun simctl runtime add` — neither was attempted here, since both
+  are outside what this run's tooling does on its own. No new platform was downloaded; the
+  existing 26.0/26.5/27.0/27.1 runtimes are untouched.
+
+So the `unsupportedPlatform` launch path is still not observed on a real pre-26 OS — the "iOS
+below 26 at runtime" bullet below is unchanged in substance, only in what was tried against it.
+
+As a substitute exercise of the one thing this attempt _could_ still verify — the empty
+assistant bubble the iOS 26.0 run above flagged — the example's fix (guarded rendering: keep
+the bubble while a turn is in flight, drop it only once `status` is back to `'idle'` and
+`streamingText` is still `''`) was checked live on the already-installed iPhone 17 Pro, iOS
+26.0 Simulator: the existing Debug build launched without incident, Metro attached, and
+"Hello, tell me a short joke." reproduced the same `guardrail` failure the iOS 26.0 run above
+recorded (`streamingText` never received a token). No empty assistant bubble appeared under the
+user's message this time. `cd example && npx tsc --noEmit` and `npx prettier --check App.tsx`
+both passed clean.
 
 ## What remains unverified
 
-- **iOS below 26 at runtime.** No pre-26 simulator runtime is installed, and none was downloaded. The `unsupportedPlatform` path is covered only by three things: the iOS 16.4 typecheck, the `LC_LOAD_WEAK_DYLIB` load command and 203/203 weak references, and code review of the guards. Nobody has launched the app on iOS 17–25, so the app starting there and every call reporting `unsupportedPlatform` is inferred, not observed.
+- **iOS below 26 at runtime.** No pre-26 simulator runtime is installed. A download was attempted (the section above) and refused for every iOS 18.x build version tried; the installed Xcode 27.1 offers only 26.0/26.5/27.0/27.1, so none was downloaded. The `unsupportedPlatform` path is covered only by three things: the iOS 16.4 typecheck, the `LC_LOAD_WEAK_DYLIB` load command and 203/203 weak references, and code review of the guards. Nobody has launched the app on iOS 17–25, so the app starting there and every call reporting `unsupportedPlatform` is inferred, not observed.
 - **Successful generation on iOS 26.x.** This is still unmeasured, and so are `usage` absence on a real result and `finishReason` without usage. Neither the 26.0 nor the 26.5 Simulator can generate on a macOS 27 host (above): the safety model fails to load, which 26.0 reports as a guardrail trip and 26.5 as an untyped error. Of the typed `GenerationError` cases, only `guardrailViolation` has been observed thrown in practice. That needs an iOS 26 device, or a macOS 26 host running the 26.x simulator.
 - **The D23 constraint matrix, D21 cancellation and tool round trips on 26.x.** These are still 27-only measurements.
-- **A Release build.** Only Debug was built. In Release the app code links into the main executable rather than `*.debug.dylib`, so the weak load command should be re-checked there.
