@@ -4,5 +4,7 @@
 repository (`taaltreelabs-dev-ui`). The artwork is unchanged; a light background
 has been added so the dark green mark stays visible in light and dark themes.
 
-The README uses an absolute raw GitHub URL so npm can display the asset too.
-That URL becomes available when this asset is merged into `main`.
+The README uses a repository-relative image path so GitHub displays the asset
+from the branch or commit being viewed, including before it is merged into `main`.
+Check image rendering on npm when preparing a release; a hosted image URL may be
+needed there.

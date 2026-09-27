@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://taaltreelabs.com">
-    <img src="https://raw.githubusercontent.com/taaltreelabs/on-device-llm/main/docs/assets/taaltree-labs.svg" alt="TaalTree Labs" width="88" height="88">
+    <img src="docs/assets/taaltree-labs.svg" alt="TaalTree Labs" width="88" height="88">
   </a>
 </p>
 
