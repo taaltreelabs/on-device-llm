@@ -319,44 +319,88 @@ So, now observed rather than only compiled:
 
 After each error the hook returned to `idle` and the next send worked, so nothing was left hanging. (An earlier attempt in this run appeared stuck in `streaming` for several minutes; it followed a Fast Refresh edit of `App.tsx` mid-session and did not reproduce on a clean relaunch, so it is recorded as a dev-loop artifact, not a library behaviour.) One cosmetic thing the run showed in the example app: an error mid-turn leaves an empty streaming bubble, because the hook deliberately leaves `streamingText` as-is on failure and the example renders `''` as a bubble. (Fixed in the example afterwards — see below.)
 
-## iOS 18 Simulator run: below the on-device floor — attempted, blocked before a device existed
+## iOS 18.6 Simulator run: below the on-device floor
 
-The maintainer authorized downloading a pre-26 Simulator runtime so the `unsupportedPlatform`
-path (D42's "16.4 podspec floor" section above) could finally be exercised live rather than
-only typechecked. The attempt did not get as far as a device:
+Run on 2026-09-26, once the maintainer got a pre-26 runtime installed: `xcodebuild
+-downloadPlatform` had refused every iOS 18.x version (the previous section's finding), so the
+iOS 18.6 Simulator runtime was installed by hand through Xcode's Settings › Components instead.
+With a device finally available, the `unsupportedPlatform` path (D42's "16.4 podspec floor"
+section above) could be exercised live rather than only typechecked.
 
-- Host: macOS 27.2 (26B5091g), Xcode 27.1 (27A9269).
-- `xcodebuild -downloadPlatform iOS -buildVersion 18.6` answered "iOS 18.6 is not available for
-  download." The same refusal came back for every other 18.x tried: 18.5, 18.4, 18.3.1, 18.2,
-  18.1, 18.0.
-- `xcodebuild -downloadPlatform iOS` with no version pinned offers only iOS 27.1 and 27.0.
-  `xcrun simctl list runtimes available -j` lists exactly four installable runtimes — 26.0,
-  26.5, 27.0, 27.1 — the same four already on this machine (`xcrun simctl runtime list`: 37.7G
-  across five disk images, two builds of 27.0). No second Xcode is installed, and no runtime
-  bundle is cached under `/Library/Developer/CoreSimulator/Profiles/Runtimes`.
-- Reading: Xcode 27.1's own download catalog simply does not carry an iOS 18.x Simulator
-  runtime. A given Xcode appears to offer only what pairs with roughly its own generation, not
-  the full history back to 18. Reaching a genuinely pre-26 runtime from this machine would need
-  either an older Xcode installation or a runtime `.dmg` fetched by hand from Apple's developer
-  downloads and added with `xcrun simctl runtime add` — neither was attempted here, since both
-  are outside what this run's tooling does on its own. No new platform was downloaded; the
-  existing 26.0/26.5/27.0/27.1 runtimes are untouched.
+- Host: macOS 27.2 (26B5091g). Simulator: iPhone 16 Pro, iOS 18.6 runtime. App: the existing
+  Debug build, JS from Metro (no rebuild, no `pod install`).
+- **The app launched.** No dyld abort, no crash report, no FoundationModels reference anywhere
+  in the unified log for the process — the guard never touches the framework below iOS 26, as
+  designed.
 
-So the `unsupportedPlatform` launch path is still not observed on a real pre-26 OS — the "iOS
-below 26 at runtime" bullet below is unchanged in substance, only in what was tried against it.
+**`availability()` and `capabilities()`, raw from the native module**, verbatim from the Metro
+log:
 
-As a substitute exercise of the one thing this attempt _could_ still verify — the empty
-assistant bubble the iOS 26.0 run above flagged — the example's fix (guarded rendering: keep
-the bubble while a turn is in flight, drop it only once `status` is back to `'idle'` and
-`streamingText` is still `''`) was checked live on the already-installed iPhone 17 Pro, iOS
-26.0 Simulator: the existing Debug build launched without incident, Metro attached, and
-"Hello, tell me a short joke." reproduced the same `guardrail` failure the iOS 26.0 run above
-recorded (`streamingText` never received a token). No empty assistant bubble appeared under the
-user's message this time. `cd example && npx tsc --noEmit` and `npx prettier --check App.tsx`
-both passed clean.
+```json
+{
+  "availability": {
+    "reason": "unsupportedPlatform",
+    "detail": "Apple FoundationModels needs iOS 26 or later; this device runs an older iOS.",
+    "available": false
+  },
+  "capabilities": {
+    "supportsReasoning": false,
+    "locales": [],
+    "tokenCounting": "estimated",
+    "supportsToolCalling": false,
+    "contextWindow": 0,
+    "modelLabel": "Apple Foundation Model",
+    "supportsGuidedGeneration": false,
+    "usageReporting": false,
+    "supportsVision": false
+  }
+}
+```
+
+This matches the "Below iOS 26" row of the `UnsupportedPlatform` table above exactly, key for
+key. The example's provider-level panel (the router, one level up) reported the picture a
+consumer actually sees: `{"available": true}` overall, because the router falls through to a
+provider that works, with capabilities `{"contextWindow": 8192, "streaming": true,
+"structuredOutput": true, "tools": false, "tokenCounting": "estimated", "locales": "unknown",
+"modelLabel": "system"}` — `cloud-fm`'s own numbers, not Apple's.
+
+**Chat, JSON demo and tool demo**, with the maintainer's `fm serve` reachable at
+`127.0.0.1:1976` for this run (unlike the iOS 26.0/26.5 runs above, so the cloud leg could
+actually complete rather than fail with `network`):
+
+- Sending "What is the capital of France?" produced a real reply, "The capital of France is
+  Paris.", captioned "via cloud-fm", with the router's caption reading "Sent 1 of 1 messages in
+  history -- via cloud-fm". The button returned to Send and no empty assistant bubble appeared —
+  a second, independent confirmation of the empty-bubble fix noted in the iOS 26.0 section above
+  (guarded rendering: keep the bubble while a turn is in flight, drop it only once `status` is
+  back to `'idle'` and `streamingText` is still `''`).
+- The JSON demo produced a real structured result, `{"city": "Amsterdam", "tempC": 18.5,
+"conditions": "sunny"}`, "PASS -- matches the schema", `usage: {"inputTokens":65,
+"outputTokens":31}` — the router's JSON path over `cloud-fm` works end to end below the
+  on-device floor.
+- The tool demo failed as it should, with this error from the OpenAI provider's own guard:
+
+  ```
+  invalidRequest: This provider does not support tool calling (`capabilities().tools` is
+  false). Remove `tools`, or route the request to a provider that reports `tools: true`.
+  ```
+
+  Below the on-device floor the only available provider is `cloud-fm`, and `fm serve` has no
+  usable tool calling (D8), so the request is refused before it reaches the network. The first
+  automated pass in this run could not get the button to register a tap; a retry on a fresh
+  launch did, on the first tap.
+
+**The unified log** (`xcrun simctl spawn <udid> log show --predicate 'process ==
+"ondevicellmexample"'`) showed nothing alarming for the whole run. A naive `grep -i
+FoundationModels\|dyld\|crash\|fault\|OnDeviceLlm` over that log matches almost every line,
+because the process's own name (`ondevicellmexample`) contains `OnDeviceLlm` as a substring;
+filtering for actual signal (`FoundationModels`, `dyld`, `crash`, and `Fault`-level entries,
+plus `RCTFatal`/unhandled-exception/LogBox markers) found zero matches. The only network
+activity was the two real `cloud-fm` calls above, both `127.0.0.1:1976`, both completing with
+HTTP 200.
 
 ## What remains unverified
 
-- **iOS below 26 at runtime.** No pre-26 simulator runtime is installed. A download was attempted (the section above) and refused for every iOS 18.x build version tried; the installed Xcode 27.1 offers only 26.0/26.5/27.0/27.1, so none was downloaded. The `unsupportedPlatform` path is covered only by three things: the iOS 16.4 typecheck, the `LC_LOAD_WEAK_DYLIB` load command and 203/203 weak references, and code review of the guards. Nobody has launched the app on iOS 17–25, so the app starting there and every call reporting `unsupportedPlatform` is inferred, not observed.
+- **iOS below 26 at runtime, on a real device.** The Simulator side of this is now covered: iOS 18.6 launched cleanly and reported `unsupportedPlatform` exactly as documented, with the router falling through to the cloud provider. What is still missing is the same path on a physical pre-26 iPhone rather than a Simulator — only Simulator runtimes (26.0/26.5/27.0/27.1, plus the newly installed 18.6) exist on this machine, so nobody has watched the compiled binary run this path on real pre-26 hardware.
 - **Successful generation on iOS 26.x.** This is still unmeasured, and so are `usage` absence on a real result and `finishReason` without usage. Neither the 26.0 nor the 26.5 Simulator can generate on a macOS 27 host (above): the safety model fails to load, which 26.0 reports as a guardrail trip and 26.5 as an untyped error. Of the typed `GenerationError` cases, only `guardrailViolation` has been observed thrown in practice. That needs an iOS 26 device, or a macOS 26 host running the 26.x simulator.
 - **The D23 constraint matrix, D21 cancellation and tool round trips on 26.x.** These are still 27-only measurements.

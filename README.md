@@ -211,9 +211,10 @@ affect the `openai` provider or the router.
 
 **Honesty note:** the iOS 26 fallbacks above have been exercised live on iOS 26.0 and
 26.5 Simulators (capability fallbacks, estimated token counting, and the iOS 26 error
-mapping confirmed), but a successful generation on a real iOS 26 device is still pending,
-and the below-26 `unsupportedPlatform` path is still unexercised — a pre-26 Simulator
-runtime was not obtainable through the installed Xcode's download tooling — see
+mapping confirmed), but a successful generation on a real iOS 26 device is still pending.
+The below-26 `unsupportedPlatform` path has now run live too, on an iOS 18.6 Simulator,
+where the app launched normally and every call reported the documented fallback — but
+still only on a Simulator, not a physical pre-26 iPhone — see
 `docs/research/ios26-compat.md` for exactly what was run versus only compiled.
 
 ## Privacy
