@@ -260,6 +260,16 @@ The bridge handled it as designed. `generate` and `stream` both returned this pa
 
 One detail is new. The 26.5 runtime threw an `NSError` whose **domain is `FoundationModels.LanguageModelSession.GenerationError` with code `-1`**, and it did not cast to the `GenerationError` enum. So it went through `mapUntyped`, not the legacy mapper. This is the D9 lane ("availability is necessary but not sufficient"), seen on iOS 26 for the first time: `availability` said `available` and the first inference failed anyway.
 
+### Rerun with `fm serve` up (2026-09-26)
+
+The same device and build, with the maintainer's `fm serve` listening on `127.0.0.1:1976`, so the fallback leg could complete. The native readout matched the first run exactly (`available: true`, `tokenCounting: "exact"`, `usageReporting: false`, `contextWindow: 4096`, the fixed label and flags). Every request tried the Apple provider first, failed inside the model service with the same `promptTemplateNotFound` safety-model error, and was handed to `cloud-fm`:
+
+- **Chat.** "What is the capital of France?" was answered "Paris", captioned "via cloud-fm (fell back)". The unified log orders it: the Apple inference failed at 19:48:30.7, and the `POST /v1/chat/completions` to `fm serve` finished with status 200 at 19:48:31.4, 0.7 s later.
+- **JSON demo.** `{"tempC": 22.5, "city": "Amsterdam", "conditions": "sunny"}`, "PASS -- matches the schema", `usage: {"inputTokens":65,"outputTokens":31}`. The usage is `fm serve`'s, since the answer came from the cloud leg.
+- **Tool demo.** The Apple leg failed the same way, then `cloud-fm` refused the request with the OpenAI provider's `invalidRequest` tool guard, because `fm serve` has no usable tool calling (D8). That is the correct outcome for a request no remaining provider can serve.
+
+This is the first time the transient-failure fallback (D30) has completed end to end on a device OS rather than in the router's unit tests.
+
 ## iOS 26.0 Simulator run (macOS 27.2 host)
 
 Run on 2026-09-26, after the maintainer installed the iOS 26.0 (23A343) simulator runtime, to exercise the three behaviours gated at iOS 26.4 that the 26.5 run could not reach. Same host and example build as the 26.5 run; device iPhone 17 Pro on the 26.0 runtime.
