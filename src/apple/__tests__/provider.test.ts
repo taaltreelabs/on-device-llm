@@ -61,7 +61,7 @@ describe('availability', () => {
     await expect(make({ locale: 'nl-NL' }).availability()).resolves.toEqual({ available: true });
   });
 
-  it('reports unavailable for an unsupported configured locale (D19)', async () => {
+  it('reports unavailable for an unsupported configured locale', async () => {
     const availability = await make({ locale: 'pl-PL' }).availability();
     expect(availability).toMatchObject({ available: false, reason: 'deviceNotEligible' });
     expect(availability.available === false && availability.detail).toMatch(/pl-PL/);
@@ -89,7 +89,7 @@ describe('capabilities', () => {
     });
   });
 
-  it('normalizes a zero context window to UNKNOWN (D9/D11)', async () => {
+  it('normalizes a zero context window to UNKNOWN', async () => {
     native.capabilitiesResult = { ...native.capabilitiesResult, contextWindow: 0 };
     await expect(make().capabilities()).resolves.toMatchObject({ contextWindow: UNKNOWN });
   });
@@ -143,7 +143,7 @@ describe('request validation (rejected before crossing the bridge)', () => {
     await rejects({ messages: [{ role: 'system', content: 'be nice' }] }, /only system messages/i);
   });
 
-  it('rejects a conversation ending with an assistant message (D17)', async () => {
+  it('rejects a conversation ending with an assistant message', async () => {
     await rejects(
       {
         messages: [
@@ -311,7 +311,7 @@ describe('native error payloads map onto the taxonomy', () => {
     ).toBe(true);
   });
 
-  it('unknown keeps the transient hint and the native diagnostics (D9)', async () => {
+  it('unknown keeps the transient hint and the native diagnostics', async () => {
     const err = await failWith({
       code: 'unknown',
       message: 'The operation couldn’t be completed.',

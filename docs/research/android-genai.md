@@ -87,7 +87,7 @@ A `GenerativeModelFutures` facade mirrors the same calls as `ListenableFuture`s 
 
 **This is a much larger surface than §9 assumed.** `countTokens`, `getTokenLimit`, `warmup`, and per-feature capability probes all exist and map almost one-for-one onto methods our contract already has.
 
-### Message list or single prompt? (the D2-equivalent question)
+### Message list or single prompt?
 
 **A list — but an unroled one.** This is the single most important structural finding.
 
@@ -170,7 +170,7 @@ The internal adapter `com.google.android.gms.internal.mlkit_genai_prompt.zzyp` i
 
 The incoming `String` is wrapped directly into a fresh `Candidate` and pushed to the channel. **There is no `StringBuilder`, no `append`, and no accumulator field anywhere in the method.** So each `GenerateContentResponse` emitted by `generateContentStream` carries only the newly generated chunk.
 
-This is genuinely good news: **DECISIONS.md D5 exists because Apple's `ResponseStream` yields cumulative snapshots that the Apple provider must diff. Android needs no such conversion** — `onNewText` maps straight to our `textDelta`.
+This is genuinely good news: **Apple's `ResponseStream` yields cumulative snapshots that the Apple provider must diff. Android needs no such conversion** — `onNewText` maps straight to our `textDelta`.
 
 ### Cancellation
 
@@ -255,9 +255,9 @@ Object getTokenLimit(Continuation<? super Integer>);
 
 **The budget is combined input+output** — the same semantics as Apple's `contextSize`, so the Phase 2 formula (`window − reservedForOutput − safetyMargin`) transfers unchanged.
 
-**Not found:** any documented per-variant window split. The "4K vs 8K by nano variant" framing in the mandate is **not corroborated by any Google source**; the docs give one uniform ~4,096-token ceiling. The artifact does, however, carry a regex `nano-v(\d+)` (in `…mlkit_genai_prompt.zzzy`) used together with `getBaseModelName()` to gate features by model version — so per-variant behaviour is real, it is simply not documented as a window figure. Treat `getTokenLimit()` as the only trustworthy number and run it through `normalizeContextWindow` (D9).
+**Not found:** any documented per-variant window split. The "4K vs 8K by nano variant" framing in the mandate is **not corroborated by any Google source**; the docs give one uniform ~4,096-token ceiling. The artifact does, however, carry a regex `nano-v(\d+)` (in `…mlkit_genai_prompt.zzzy`) used together with `getBaseModelName()` to gate features by model version — so per-variant behaviour is real, it is simply not documented as a window figure. Treat `getTokenLimit()` as the only trustworthy number and run it through `normalizeContextWindow`.
 
-**Locales:** there is **no enumeration API**. `genai-common` contains `internal.SapiLanguage`, but `javap` shows it is an **empty marker annotation** with no members. → **`capabilities().locales = UNKNOWN`**, and per D7 locale failures can only be discovered at generation time. This is a real regression against Apple's 24 enumerated tags, and it means D30's `unsupportedLocale` fallback trigger can never fire on Android — there is no code for it either (§5).
+**Locales:** there is **no enumeration API**. `genai-common` contains `internal.SapiLanguage`, but `javap` shows it is an **empty marker annotation** with no members. → **`capabilities().locales = UNKNOWN`**, and locale failures can only be discovered at generation time. This is a real regression against Apple's 24 enumerated tags, and it means the router's `unsupportedLocale` fallback trigger can never fire on Android — there is no code for it either (§5).
 
 ---
 
@@ -287,7 +287,7 @@ Note `checkStatus()` returns a bare `Int`, not an enum — an unrecognised futur
 
 | Android signal | Our `Availability` | Notes |
 |---|---|---|
-| `FeatureStatus.AVAILABLE` | `{ available: true }` | D9 still applies — see §7 |
+| `FeatureStatus.AVAILABLE` | `{ available: true }` | Availability does not guarantee generation — see §7 |
 | `FeatureStatus.DOWNLOADING` | `{ available: false, reason: 'modelNotReady' }` | `detail` from `DownloadProgress` |
 | `FeatureStatus.DOWNLOADABLE` | `{ available: false, reason: 'modelNotReady' }` | eligible, assets absent; `download()` is the remedy |
 | `FeatureStatus.UNAVAILABLE` | `{ available: false, reason: 'deviceNotEligible' }` | AICore allowlist says no |
@@ -314,7 +314,7 @@ public class GenAiException extends Exception {
 
 21 codes, verbatim from the artifact, mapped:
 
-| `GenAiException.ErrorCode` | `LLMError` | D30 fallback | Transient |
+| `GenAiException.ErrorCode` | `LLMError` | Router fallback | Transient |
 |---|---|---|---|
 | `CANCELLED` | `cancelled` | never | — |
 | `REQUEST_TOO_LARGE` | `contextOverflow` | **on** | — |
@@ -340,7 +340,7 @@ public class GenAiException extends Exception {
 
 **`getRetryDelay(): Duration` is a gift.** Apple's `RateLimited.resetDate` has a direct Android counterpart, so `RateLimitedErrorDetails.resetDate` is populatable on both platforms.
 
-**There is no `guardrail` code.** Safety appears to be handled as prompt text (the injected *"Do NOT generate unsafe content"* string in `zzys`) rather than as a typed refusal, so a blocked response most likely arrives as ordinary text or as `RESPONSE_GENERATION_ERROR`. **We cannot reliably raise `guardrail` on Android**, which means D30's deliberate "guardrail does not fall through by default" policy is unenforceable there — a safety-relevant asymmetry worth recording.
+**There is no `guardrail` code.** Safety appears to be handled as prompt text (the injected *"Do NOT generate unsafe content"* string in `zzys`) rather than as a typed refusal, so a blocked response most likely arrives as ordinary text or as `RESPONSE_GENERATION_ERROR`. **We cannot reliably raise `guardrail` on Android**, which means the router's deliberate "guardrail does not fall through by default" policy is unenforceable there — a safety-relevant asymmetry worth recording.
 
 ---
 
@@ -371,7 +371,7 @@ This is the finding that governs the whole dev/CI loop, so the evidence is laid 
 - Google's own sibling stack states it outright: MediaPipe LLM Inference *"does not reliably support device emulators."*
 - The AAR's own manifest is consistent with this: it declares `<queries><package android:name="com.google.android.aicore" /></queries>` and requests `com.google.android.apps.aicore.service.BIND_SERVICE`. **AICore is a preinstalled system service.** It is not on any public AVD system image, and it is not installable from Play, so there is nothing for the SDK to bind to on an emulator.
 
-**Consequence:** there is **no CI path and no laptop-only dev loop**. Every behavioural question in this document marked "unverified" — the role encoding, real cancellation, streaming granularity end-to-end, the actual `getTokenLimit()` value — requires **purchased, allowlisted hardware**. This is qualitatively worse than the Apple situation, where the development Mac itself runs the model and `fm serve` gives a local rig (D8).
+**Consequence:** there is **no CI path and no laptop-only dev loop**. Every behavioural question in this document marked "unverified" — the role encoding, real cancellation, streaming granularity end-to-end, the actual `getTokenLimit()` value — requires **purchased, allowlisted hardware**. This is qualitatively worse than the Apple situation, where the development Mac itself runs the model and `fm serve` gives a local rig.
 
 ---
 
@@ -401,7 +401,7 @@ From **https://developers.google.com/ml-kit/genai-terms** ("ML Kit GenAI API Add
 
 ## 9. Kotlin / Expo integration shape
 
-**Expo Modules API maturity: adequate.** The repo already carries a dependency-free Android stub (`android/src/main/java/expo/modules/ondevicellm/OnDeviceLlmModule.kt`, `android/build.gradle` with only `com.android.library` + `expo-module-gradle-plugin`, and an empty `<manifest/>`). `expo-modules-core` supports `AsyncFunction` with Kotlin **coroutines** and `Events` + `sendEvent` for streaming, which is the exact pair this API needs — `suspend fun generateContent(...)` and `Flow.collect { sendEvent(...) }`. D17's wire shape (`generate` resolving `{ ok, result } | { ok, error }`, `startStream` reporting everything through `onStreamEvent`) transfers to Android unchanged, and the richer `GenAiException` payload (`getErrorCode()`, `getRetryDelay()`) survives it exactly as D17 intended.
+**Expo Modules API maturity: adequate.** The repo already carries a dependency-free Android stub (`android/src/main/java/expo/modules/ondevicellm/OnDeviceLlmModule.kt`, `android/build.gradle` with only `com.android.library` + `expo-module-gradle-plugin`, and an empty `<manifest/>`). `expo-modules-core` supports `AsyncFunction` with Kotlin **coroutines** and `Events` + `sendEvent` for streaming, which is the exact pair this API needs — `suspend fun generateContent(...)` and `Flow.collect { sendEvent(...) }`. The existing wire shape (`generate` resolving `{ ok, result } | { ok, error }`, `startStream` reporting everything through `onStreamEvent`) transfers to Android unchanged, and the richer `GenAiException` payload (`getErrorCode()`, `getRetryDelay()`) survives it across the bridge.
 
 **The dependency burden is real and it is the design constraint.** `genai-prompt:1.0.0-beta4` pulls, transitively and at `compile` scope:
 
@@ -440,11 +440,11 @@ Option 1 or 2 keeps §9's single-package promise without taxing every consumer. 
 | `id` | n/a | none |
 | `availability()` | `checkStatus(): Int` → 4 states | **None — clean 4→3 mapping.** `notEnabled` unused. |
 | `capabilities().contextWindow` | `getTokenLimit(): Int`, combined in+out | **None.** Same semantics as Apple. Run through `normalizeContextWindow`. |
-| `capabilities().streaming` | `true` | **None — and better than Apple**: native deltas, no D5 diffing. |
+| `capabilities().streaming` | `true` | **None — and better than Apple**: native deltas, no snapshot diffing. |
 | `capabilities().structuredOutput` | `false` | **Hard gap.** `KClass`-only + KSP codegen; a runtime JSON Schema cannot be expressed. §3. |
 | `capabilities().tools` | `false` | **Hard gap.** No tool types exist at all. Phase 3 parity impossible. |
 | `capabilities().tokenCounting` | `'exact'` | **None.** `countTokens(request)` matches our per-message design. |
-| `capabilities().locales` | `UNKNOWN` | **Gap.** No enumeration API (`SapiLanguage` is an empty marker). D7's pre-check and D30's `unsupportedLocale` trigger are both inert on Android. |
+| `capabilities().locales` | `UNKNOWN` | **Gap.** No enumeration API (`SapiLanguage` is an empty marker). The locale pre-check and the router's `unsupportedLocale` trigger are both inert on Android. |
 | `capabilities().modelLabel` | `getBaseModelName(): String` (`"nano-v3"`) | **None.** Better than expected. |
 | `countTokens(messages)` | `countTokens(GenerateContentRequest)` | Minor — accuracy inherits the role-encoding guess. |
 | `prewarm(messages?)` | `warmup()`, plus `Caches`/`PromptPrefix` for prefix warming | **None — arguably richer than Apple.** `warmup()` takes no messages, but `Caches.create(...)` warms a prefix. |
@@ -453,24 +453,24 @@ Option 1 or 2 keeps §9's single-package promise without taxing every consumer. 
 | `RequestOptions.signal` | coroutine cancellation + `ErrorCode.CANCELLED` | **Unverified**: does cancelling stop AICore inference, or only delivery? Contract demands the former. |
 | **`Message[]` → request** | `List<Content>`, **no role field** | **The worst gap.** §1. Multi-turn role attribution must be invented by us and is unverifiable without hardware. |
 | Error taxonomy | 21 `GenAiException` codes | Maps well; `getRetryDelay()` → `resetDate` is a bonus. **No `guardrail` code** — that mapping is unachievable. |
-| `LLMError` `cause` fidelity | `getErrorCode()` + message | **None.** D17's payload channel carries it. |
+| `LLMError` `cause` fidelity | `getErrorCode()` + message | **None.** The bridge payload channel carries it. |
 
 **Summary:** of 16 contract members, **10 map cleanly, 2 are hard gaps already expected to be `false` (structured output, tools), 1 is a soft gap (locales), 2 are unverifiable without hardware (cancellation, role encoding), and 1 — the message-list role gap — is a genuine design problem.**
 
 ---
 
-## 11. D9-style risk register
+## 11. Runtime risk register
 
-D9 was learned the hard way on Apple: *availability said yes, generation said no.* Android's equivalents, with evidence:
+Observed on Apple: *availability said yes, generation said no.* Android's equivalents, with evidence:
 
-1. **`AVAILABLE` then failure — documented in the wild.** AICore surfaces errors of the shape `AICore failed with error type <N>-<TYPE>`, e.g. `2-INFERENCE_ERROR` / `29-INTERNAL_ERROR: Inference failed` and `1-DOWNLOAD_ERROR` / `0-UNKNOWN: Feature is unavailable`. `googlesamples/mlkit#985` reports `Feature not available` / `"Feature 636 is not available"` crashes on **real, AICore-equipped Pixel hardware**. **D9's transient-unknown lane is not optional on Android; it is load-bearing from day one.**
+1. **`AVAILABLE` then failure — documented in the wild.** AICore surfaces errors of the shape `AICore failed with error type <N>-<TYPE>`, e.g. `2-INFERENCE_ERROR` / `29-INTERNAL_ERROR: Inference failed` and `1-DOWNLOAD_ERROR` / `0-UNKNOWN: Feature is unavailable`. `googlesamples/mlkit#985` reports `Feature not available` / `"Feature 636 is not available"` crashes on **real, AICore-equipped Pixel hardware**. **The transient-unknown error path is not optional on Android; it is load-bearing from day one.**
 2. **Models stuck downloading indefinitely, with nothing reported to the app** (XDA forums; GrapheneOS os-issue-tracker #6706). Our `modelNotReady` must therefore be treated as possibly-permanent: a `DOWNLOADING` state that never advances needs a timeout in the caller, not infinite patience.
 3. **The SDK already retries internally, and admits it.** `…mlkit_genai_prompt.zzzy` contains the literal string `"Inference failed with prefix cache, retry without cache."` — Google's own code treats first-attempt inference failure as expected. If we adopt `Caches`/`PromptPrefix`, we inherit this failure mode.
 4. **Beta with an explicit no-compatibility promise.** *"Changes may be made to this API that break backward compatibility."* Four betas shipped between 2026-01-28 and 2026-07-21 — roughly one every six weeks. Pinning is mandatory; a floating version range would be reckless.
 5. **`checkStatus()` returns a bare `Int`.** A fifth state added in beta5 must degrade to a sane reason (`modelNotReady` with a `detail`, not a crash and not a silent `available`).
 6. **Battery/background quotas are first-class failure modes** (`PER_APP_BATTERY_USE_QUOTA_EXCEEDED`, `BACKGROUND_USE_BLOCKED`) with **no iOS analogue**. A long chat session can be throttled by the OS mid-conversation. `getRetryDelay()` makes this survivable, but only if we wire it.
 7. **No emulator ⇒ no regression safety net.** Every one of the above is undetectable in CI. A beta SDK that breaks compatibility every six weeks, on hardware we can only test manually, is the compounding risk in this document.
-8. **Safety asymmetry.** With no `guardrail` code (§5), a refusal on Android most likely arrives as ordinary generated text. D30's "guardrail does not fall through by default" cannot be honoured, and an app relying on that policy would behave differently per platform.
+8. **Safety asymmetry.** With no `guardrail` code (§5), a refusal on Android most likely arrives as ordinary generated text. The router's "guardrail does not fall through by default" cannot be honoured, and an app relying on that policy would behave differently per platform.
 
 ---
 
@@ -478,7 +478,7 @@ D9 was learned the hard way on Apple: *availability said yes, generation said no
 
 ### **Build when X — not now.**
 
-The API is *far* better suited to our contract than §9 assumed. If the decision rested on API shape alone, the answer would be "build now": availability maps 4→3 with no new reason codes, token counting is **exact** and takes a request rather than a string, streaming is **native deltas** (no D5 diffing), `warmup()` matches `prewarm()`, and `getRetryDelay()` populates `resetDate`. That is a better fit than the OpenAI provider gets.
+The API is *far* better suited to our contract than §9 assumed. If the decision rested on API shape alone, the answer would be "build now": availability maps 4→3 with no new reason codes, token counting is **exact** and takes a request rather than a string, streaming is **native deltas** (no snapshot diffing), `warmup()` matches `prewarm()`, and `getRetryDelay()` populates `resetDate`. That is a better fit than the OpenAI provider gets.
 
 It is blocked by three facts, in order of weight:
 
@@ -502,10 +502,10 @@ G1 is the expensive one and it does not get cheaper. G3 is the one most likely t
 
 Deliberately front-loaded with the things hardware can answer, because hardware is the scarce resource.
 
-- **A — Spike (1 device, ~2 days, throwaway).** A bare Kotlin activity, no Expo. Answer the four unverified questions: does `List<Content>` do anything useful without roles, and what encoding works; does coroutine cancellation stop inference or only delivery; is `generateContentStream` delta-per-emission end-to-end; what does `getTokenLimit()` actually return on this device. **Record the answers in DECISIONS.md — they are the Android equivalents of D2 and D5, and they cannot be guessed.**
-- **B — Contract decisions.** Ratify: role encoding (the D2-equivalent); `structuredOutput: false` / `tools: false` / `tokenCounting: 'exact'` / `locales: UNKNOWN`; the `FeatureStatus` → `UnavailableReason` table (§5); the 21-code error table (§5); and that `guardrail` is unreachable, with the D30 consequence written down.
+- **A — Spike (1 device, ~2 days, throwaway).** A bare Kotlin activity, no Expo. Answer the four unverified questions: does `List<Content>` do anything useful without roles, and what encoding works; does coroutine cancellation stop inference or only delivery; is `generateContentStream` delta-per-emission end-to-end; what does `getTokenLimit()` actually return on this device. **Record the observed role encoding and streaming behavior; they cannot be guessed.**
+- **B — Contract decisions.** Ratify: role encoding; `structuredOutput: false` / `tools: false` / `tokenCounting: 'exact'` / `locales: UNKNOWN`; the `FeatureStatus` → `UnavailableReason` table (§5); the 21-code error table (§5); and that `guardrail` is unreachable, with the routing consequence written down.
 - **C — Dependency shape.** Implement §9 option 1 or 2 so the default consumer pays nothing. Verify with a clean Android build of an Apple-only example app that no Play-Services or Firebase-datatransport artifact appears.
-- **D — Provider.** Kotlin module + TS wrapper on D17's existing wire shape. `availability`/`capabilities`/`countTokens`/`prewarm` first (all cheap, all mappable), then `generate`, then `stream`.
+- **D — Provider.** Kotlin module + TS wrapper on the existing bridge wire shape. `availability`/`capabilities`/`countTokens`/`prewarm` first (all cheap, all mappable), then `generate`, then `stream`.
 - **E — Test rig.** Whatever is testable off-device: the message→`Content` conversion, the error-code and status mapping tables, and the "root import must not throw on a device without AICore" case. Everything else is a documented manual checklist run per SDK bump.
 
 Until G1–G3 open, the correct state for `android/` is exactly what it is today: **a dependency-free stub**, with the package reporting `unsupportedPlatform` on Android as the contract already requires.

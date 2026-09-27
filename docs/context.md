@@ -210,7 +210,7 @@ export async function trimWithSummary(messages: readonly Message[]) {
 | `onSummarizerError` | `'slidingWindow'` | The user asked a question, not for a summary. When the summarizer fails, degrade to `slidingWindow` for that request and report a warning. `'throw'` is available for apps where losing old context silently is the worse outcome. An abort always propagates regardless. |
 
 A summary is a non-pinned `system` message whose content starts with
-`[summary of earlier conversation]` (D13). `system` because a summary is out-of-band
+`[summary of earlier conversation]`. `system` because a summary is out-of-band
 context, not a turn anybody took — as an `assistant` message the model reads it as its own
 words. Marked in the *content* because that survives JSON storage, state updates, and
 providers that copy only the fields they know. **Not pinned**, which is what keeps it
@@ -260,7 +260,7 @@ summarized the question being asked.
 
 A provider may report `contextWindow: UNKNOWN`. Every cloud endpoint does unless you
 configure one, and the Apple provider does it too when the framework returns a
-non-positive `contextSize`, which happens when the on-device stack is wedged (D9).
+non-positive `contextSize`, which happens when the on-device stack is wedged.
 
 `ContextBudget` is therefore a discriminated union — `bounded | unbounded` — not a number.
 Both tempting substitutes are wrong: `Infinity` sends a doomed request while claiming it

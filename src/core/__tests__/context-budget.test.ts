@@ -1,6 +1,6 @@
 /**
  * Budget calculation and token measurement — the two inputs every strategy
- * depends on, and the two places DECISIONS.md D9 has already burned us once.
+ * depends on, and the observed failures when a context window is unknown or counting fails.
  */
 import { describe, expect, it, vi } from 'vitest';
 
@@ -60,7 +60,7 @@ describe('computeContextBudget', () => {
     expect(perKind).toMatchObject({ safetyMargin: DEFAULT_SAFETY_MARGIN_ESTIMATED_TOKENS });
   });
 
-  it("returns an explicit unbounded budget for an 'unknown' window instead of arithmetic (D9)", () => {
+  it("returns an explicit unbounded budget for an 'unknown' window instead of arithmetic", () => {
     const budget = computeContextBudget({ contextWindow: UNKNOWN, measurementKind: 'estimated' });
     expect(budget).toEqual({
       kind: 'unbounded',
@@ -138,7 +138,7 @@ describe('createMeasure', () => {
     });
   });
 
-  it('falls back and keeps going when countTokens throws (DECISIONS.md D9, ModelManagerError 1013)', async () => {
+  it('falls back and keeps going when countTokens throws (ModelManagerError 1013)', async () => {
     const failure = new LLMError({ code: 'unknown', transient: true }, { message: 'error 1013' });
     const onCounterError = vi.fn();
     const measure = createMeasure({

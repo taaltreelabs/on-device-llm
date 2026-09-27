@@ -21,7 +21,7 @@ export type ContextStrategyName = 'none' | 'slidingWindow' | 'rollingSummary' | 
 
 /** Machine-readable warning codes. New codes are additive; `switch` with a `default`. */
 export type ContextWarningCode =
-  /** The provider could not report a context window, so nothing was trimmed (DECISIONS.md D9). */
+  /** The provider could not report a context window, so nothing was trimmed. */
   | 'unknownContextWindow'
   /** `countTokens` threw or returned nonsense; the estimator stood in. */
   | 'tokenCounterFailed'

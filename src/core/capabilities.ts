@@ -6,7 +6,7 @@
 /**
  * Sentinel for "this provider cannot report that value".
  *
- * Chosen over `undefined`/optional fields on purpose. DECISIONS.md D9: the
+ * Chosen over `undefined`/optional fields on purpose. The
  * native side has been observed returning `contextSize === 0` while
  * reporting itself available, and a `0` treated as a real window silently
  * turns every budget calculation into "nothing fits" (or, worse, into a
@@ -30,7 +30,7 @@ export function isUnknown<T>(value: T | UnknownValue): value is UnknownValue {
  *
  * - `exact` — the provider counts with the model's own tokenizer. Apple
  *   ships this publicly (`SystemLanguageModel.tokenCount(for:)`), but only
- *   from iOS 26.4 — the on-device floor is iOS 26.0 (DECISIONS.md D42), so a
+ *   from iOS 26.4 — the on-device floor is iOS 26.0, so a
  *   device on 26.0–26.3 is on-floor and still has no exact counter at all.
  *   `AppleProvider` reports `'estimated'` there, not `'exact'`.
  * - `estimated` — a heuristic (see `estimateTokens`). The Phase 2 context
@@ -58,7 +58,7 @@ export interface Capabilities {
    * input+output budget, which is why the Phase 2 formula is
    * `window - reservedForOutput - safetyMargin`.
    *
-   * `UNKNOWN` when the provider genuinely cannot say. Per DECISIONS.md D9 a
+   * `UNKNOWN` when the provider genuinely cannot say. A
    * native `contextSize <= 0` must map to `UNKNOWN` and never be reported as
    * a real window; use {@link normalizeContextWindow} to do that mapping.
    */
@@ -76,7 +76,7 @@ export interface Capabilities {
    * cannot enumerate them (most cloud endpoints cannot).
    *
    * Apple *can*: it reports 24 tags via `supportedLanguages`
-   * (docs/research/sdk-surface.md §1). Per DECISIONS.md D7 this list is how
+   * (docs/research/sdk-surface.md §1). This list is how
    * a caller predicts an `unsupportedLocale` failure before paying for a
    * request; an empty array means "explicitly none", which is different from
    * `UNKNOWN` and must not be conflated.
@@ -95,7 +95,7 @@ export interface Capabilities {
  * Map a raw, possibly untrustworthy context size onto
  * `Capabilities.contextWindow`.
  *
- * Exists so the D9 guard lives in exactly one place instead of being
+ * Exists so the unknown-window guard lives in exactly one place instead of being
  * re-derived (or forgotten) by each provider: anything that is not a finite
  * number greater than zero — `0` from a broken model state, `-1`, `NaN`,
  * `null`, a missing field — becomes `UNKNOWN`. Non-integers are floored,

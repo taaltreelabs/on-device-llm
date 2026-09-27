@@ -97,7 +97,7 @@ export interface BuildRequestOptions {
  * - **empty `messages`**, or **no user message**: there is nothing to respond
  *   to.
  * - **a conversation not ending in a `user` message**: the framework has no
- *   "continue your own last message" affordance. See DECISIONS.md D17 and
+ *   "continue your own last message" affordance. See
  *   `ios/Core/TranscriptBuilder.swift` for the transcript/prompt split this
  *   falls out of.
  * - **a non-finite `temperature`** or a **non-positive, non-integer
@@ -126,7 +126,7 @@ export function buildNativeRequest(
     throw invalid(
       'The Apple provider requires the conversation to end with a user message; this one ends ' +
         `with a ${last.role} message. Apple's FoundationModels session has no way to continue an ` +
-        'assistant turn (DECISIONS.md D17).',
+        'assistant turn.',
       providerId
     );
   }

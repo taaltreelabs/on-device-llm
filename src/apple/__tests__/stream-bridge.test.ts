@@ -123,7 +123,7 @@ describe('happy path', () => {
     expect((await first).value).toEqual({ type: 'textDelta', delta: 'x' });
   });
 
-  it('trusts the final snapshot over the concatenated deltas (D18)', async () => {
+  it('trusts the final snapshot over the concatenated deltas', async () => {
     // A `reset` delta means the model rewrote text already delivered, which a
     // delta stream cannot retract. `finish.result.text` is authoritative.
     const { iterator, first, id } = await pull(make());

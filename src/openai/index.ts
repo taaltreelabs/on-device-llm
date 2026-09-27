@@ -5,7 +5,7 @@
  * developer-supplied cloud fallback, and `fm serve` during local
  * development (docs/plan.md §2, §5 Phase 1).
  *
- * ISOLATION RULE (docs/plan.md §2, DECISIONS.md D1-D9): this module and
+ * ISOLATION RULE (docs/plan.md §2): this module and
  * everything it imports must run under plain Node with no React, React
  * Native, Expo, or native module anywhere in the import graph. Do not
  * import from `../apple` or `../react`, and do not import `react`,

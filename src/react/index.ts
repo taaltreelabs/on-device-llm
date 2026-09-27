@@ -7,7 +7,7 @@
  * ISOLATION RULE (docs/plan.md §2): this directory may import `react` only.
  * `react-native` and `expo`/`expo-*` are forbidden here — enforced by the
  * ESLint override in `eslint.config.cjs` — the same spirit as the
- * `core`/`openai` isolation rule (DECISIONS.md D1-D9), even though nothing
+ * `core`/`openai` isolation rule, even though nothing
  * here is expected to run outside React. `useAvailability`'s
  * `options.resubscribe` seam exists specifically so app-only concerns like
  * `AppState` can be wired in from the app, not from this package.

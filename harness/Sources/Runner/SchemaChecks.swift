@@ -2,9 +2,9 @@
 //  SchemaChecks.swift
 //  Runner
 //
-//  Phase 3 step 6, and the evidence behind DECISIONS.md D23.
+//  Validates the supported structured-output constraints.
 //
-//  The question D6 left open: does `GenerationSchema`'s `Codable` decode
+//  The question under test: does `GenerationSchema`'s `Codable` decode
 //  preserve the constraints we promise callers (numeric bounds, array counts,
 //  string patterns, enums), or does it drop them the way it drops `minLength`
 //  and `format`? A constraint that decodes and then vanishes would be worse
@@ -122,7 +122,7 @@ func runSchemaChecks(_ harness: Harness) async {
     _ = try SchemaCodec.decode(SchemaFixtures.person, label: "fixture")
   }
 
-  await harness.check("decode preserves the constraints we promise (D6 evidence)") {
+  await harness.check("decode preserves the constraints we promise") {
     let schema = try SchemaCodec.decode(SchemaFixtures.person, label: "fixture")
     let encoded = String(data: try JSONEncoder().encode(schema), encoding: .utf8) ?? ""
     for needle in ["\"minimum\"", "\"maximum\"", "\"enum\"", "\"minItems\"", "\"maxItems\""] {

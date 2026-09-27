@@ -89,7 +89,7 @@ describe('no fallback once an event has been yielded', () => {
   it('propagates a failure that arrives after a toolCall event', async () => {
     // A toolCall means an app-written handler has already run. A second
     // provider would run it again, so the window is closed just as firmly as
-    // it is by text (DECISIONS.md D24).
+    // it is by text.
     const device = stubProvider({
       id: 'device',
       events: [{ type: 'toolCall', callId: 'c1', toolName: 'lookup', arguments: { q: 'x' } }],

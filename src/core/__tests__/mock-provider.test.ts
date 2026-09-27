@@ -177,7 +177,7 @@ describe('MockProvider: stream', () => {
         },
       },
     ]);
-    // Deltas, not snapshots (DECISIONS.md D5).
+    // Deltas, not snapshots.
     expect(events.filter((event) => event.type === 'finish')).toHaveLength(1);
   });
 

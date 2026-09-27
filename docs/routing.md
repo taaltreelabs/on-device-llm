@@ -76,7 +76,7 @@ Three constraints on the shape are load-bearing:
 
 | Field | Default | Effect |
 | --- | --- | --- |
-| `available` | `true` | Skip providers reporting `available: false`. Turning it off is meaningful rather than perverse: availability has been observed wrong in the optimistic direction (D9), and an app that has seen it wrong in the pessimistic direction can force the attempt and let the `unavailable` fallback trigger sort it out. |
+| `available` | `true` | Skip providers reporting `available: false`. Turning it off is meaningful rather than perverse: availability has been observed wrong in the optimistic direction, and an app that has seen it wrong in the pessimistic direction can force the attempt and let the `unavailable` fallback trigger sort it out. |
 | `fitsContextWindow` | `true` | Skip providers whose *known* window cannot hold the request. An `UNKNOWN` window never fails it. |
 | `minContextWindow` | — | Require a known window of at least this size. `UNKNOWN` **does** fail this one. |
 | `streaming`, `structuredOutput`, `tools` | — | Require the capability flag. |
@@ -91,7 +91,7 @@ on-device model was busy" from "the on-device model could never have served this
 
 `GenerateRequest.taskTag` is a free-form string — `'simple'`, `'reasoning'`,
 `'translate'`, whatever vocabulary your app routes on. It lives on the request rather than
-on `RequestOptions` (D29) because it is plain serializable data that should survive being
+on `RequestOptions` because it is plain serializable data that should survive being
 stored, replayed, logged as metadata, and threaded through the context manager and the
 hooks alongside the messages it describes, whereas `RequestOptions` holds the things that
 cannot be serialized and change on every invocation.
@@ -119,7 +119,7 @@ provider-independent baseline), and `candidates`.
 **The context-window check.** `estimateTokens` is computed once per request as the
 baseline; a provider's own `countTokens()` is called only when it has one *and* a known
 `contextWindow` — the only case where an exact number can change the decision. An
-`UNKNOWN` window is not a disqualifier (D11): every cloud endpoint is in that state,
+`UNKNOWN` window is not a disqualifier: every cloud endpoint is in that state,
 refusing them all would be worse than trying, and a provider that cannot describe its
 window still reports a real `contextOverflow` with real numbers. `maxOutputTokens` is
 counted against the same window, because Apple's `contextSize` is a combined input+output
@@ -288,7 +288,7 @@ promise. Three providers behind an uncached router is six native round trips bef
 single token.
 
 The staleness is safe in the direction that matters: `available: true` never meant "the
-next request will succeed" (D9), so a stale `true` costs nothing a fresh one would not —
+next request will succeed", so a stale `true` costs nothing a fresh one would not —
 the failure is what the fallback chain is for. A stale `false` can pass over a provider
 that just became usable, which is bounded by the TTL, self-correcting, and strictly less
 costly than the alternative.

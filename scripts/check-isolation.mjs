@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Enforces the isolation rule from docs/plan.md §2 / DECISIONS.md D1-D9:
+ * Enforces the isolation rule from docs/plan.md §2:
  * `core` and `openai` must be importable from plain Node with nothing
  * React, React Native, Expo, or native anywhere in their import graph.
  *

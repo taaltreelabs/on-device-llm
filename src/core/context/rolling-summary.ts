@@ -114,7 +114,7 @@ export interface RollingSummaryOptions extends StrategyEnvironment {
  * not for a summary. A failed summarization is a quality regression — older
  * context gets dropped rather than compressed — while failing the request is a
  * total loss, and the failure modes here are exactly the transient ones
- * DECISIONS.md D9 documents (a wedged on-device stack, a network blip). The
+ * we have observed (a wedged on-device stack, a network blip). The
  * caller sees the warning and can retry, re-summarize later, or tell the user.
  * Set `onSummarizerError: 'throw'` if losing old context silently is worse for
  * your app than not answering.
@@ -217,7 +217,7 @@ export async function rollingSummary(
     if ((options.onSummarizerError ?? 'slidingWindow') === 'throw') {
       // `unknown` + transient, not `contextOverflow`: nothing about the
       // context was wrong, the summarizer just produced nothing usable — and
-      // DECISIONS.md D9 reserves this lane for exactly that kind of
+      // The transient-unknown error code covers this kind of
       // system-level hiccup, which a retry may well clear.
       throw new LLMError(
         { code: 'unknown', transient: true },

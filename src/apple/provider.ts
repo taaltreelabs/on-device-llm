@@ -6,10 +6,9 @@
  * locales; `generate` and `stream` (deltas, with cancellation that really stops
  * native generation) from a session built per request; prewarming; token
  * counting (exact on iOS 26.4+, the core heuristic estimator on the rest of
- * the iOS 26.0+ floor — DECISIONS.md D42/D10); structured output from a
+ * the iOS 26.0+ floor); structured output from a
  * normalized JSON Schema; and tool calling, where a native tool call suspends
- * on a continuation while the request's handler runs in JavaScript
- * (DECISIONS.md D23-D26).
+ * on a continuation while the request's handler runs in JavaScript.
  */
 
 import {
@@ -56,7 +55,7 @@ export interface AppleProviderConfig {
    * BCP-47 tag of the language this app will actually talk to the model in
    * (`'nl-NL'`, `'fr'`). Optional, and when set it is checked against
    * `SystemLanguageModel.supportsLocale` by `availability()` — see
-   * DECISIONS.md D19. It does not add a per-request check: that would cost a
+   * It does not add a per-request check: that would cost a
    * bridge hop on every call to re-answer a question whose answer cannot
    * change while the process is running.
    *
@@ -71,10 +70,9 @@ export interface AppleProviderConfig {
    * in milliseconds. Defaults to {@link DEFAULT_TOOL_CALL_TIMEOUT_MS}.
    *
    * There is a timeout at all because the alternative — which every bridge we
-   * surveyed ships (DECISIONS.md D2) — is a handler that forgets to answer
+   * surveyed ships — is a handler that forgets to answer
    * pinning the neural engine for the life of the process, with no error and
-   * nothing in the log. Timing out fails the request as `unknown`/transient
-   * (D25), which a router can retry.
+   * nothing in the log. Timing out fails the request as `unknown`/transient, which a router can retry.
    */
   readonly toolCallTimeoutMs?: number;
 }
@@ -82,7 +80,7 @@ export interface AppleProviderConfig {
 const PLATFORM_DETAIL =
   'Apple FoundationModels is not available in this process. Expected on Android, on web, ' +
   'under Node, and on any iOS build without the native module (on-device requires iOS 26 ' +
-  'or later, DECISIONS.md D42).';
+  'or later).';
 
 export class AppleProvider implements LLMProvider {
   readonly id: string;
@@ -95,7 +93,7 @@ export class AppleProvider implements LLMProvider {
    * runs, so one `capabilities()` round trip settles it for the provider's
    * lifetime; without this, every `fitContext` measurement would cost a
    * bridge hop before it even started counting. A rejected lookup is not
-   * cached, so a transient bridge failure (D9) is retried next time.
+   * cached, so a transient bridge failure is retried next time.
    */
   private tokenCountingMode?: { native: AppleNativeModule; mode: Promise<TokenCounting> };
 
@@ -122,7 +120,7 @@ export class AppleProvider implements LLMProvider {
    *    module is resolved inside this method, in a `try`/`catch`, never at
    *    import time.
    * 2. **`SystemLanguageModel.availability`** -> its three reasons, renamed.
-   * 3. **The configured `locale`**, if any -> see D19.
+   * 3. **The configured `locale`**, if any -> unsupported locales report `deviceNotEligible`.
    */
   async availability(): Promise<Availability> {
     const native = this.resolveNative();
@@ -135,7 +133,7 @@ export class AppleProvider implements LLMProvider {
       nativeAvailability = await native.availability();
     } catch (err) {
       // A bridge that resolved but cannot answer is not a platform problem —
-      // report it as the transient system failure it is (D9).
+      // report it as the transient system failure it is.
       return {
         available: false,
         reason: 'modelNotReady',
@@ -163,7 +161,7 @@ export class AppleProvider implements LLMProvider {
         supported = true;
       }
       if (!supported) {
-        // DECISIONS.md D19. `UnavailableReason` has no locale member (D7), and
+        // `UnavailableReason` has no locale member, and
         // of the three it does have, `deviceNotEligible` is the only one that
         // is permanent and non-retryable — which is what this is. The `detail`
         // carries the truth. Note this check is not merely an optimisation:
@@ -197,8 +195,7 @@ export class AppleProvider implements LLMProvider {
    * `tokenCounting` is the **native-reported value**
    * (`NativeCapabilities.tokenCounting`), not inferred from whether
    * `countTokens` exists on the bridge: the on-device floor is iOS 26.0, and
-   * `SystemLanguageModel.tokenCount(for:)` only exists from 26.4 onward
-   * (DECISIONS.md D42), so a device can be on-floor and still have no exact
+   * `SystemLanguageModel.tokenCount(for:)` only exists from 26.4 onward, so a device can be on-floor and still have no exact
    * counter. `'exact'` additionally requires `native.countTokens` to actually
    * be a function, for the same JS-newer-than-native reason as `tools` above.
    * This never reports `'none'`: `countTokens()` below always has an answer
@@ -226,9 +223,9 @@ export class AppleProvider implements LLMProvider {
     }
 
     // `0` (or anything non-positive) means the framework could not tell us —
-    // observed live on a machine whose model assets were wedged (D9). It
+    // observed live on a machine whose model assets were wedged. It
     // becomes the typed `UNKNOWN`, which the Phase 2 context manager handles
-    // explicitly (D11), rather than a guessed 4096.
+    // explicitly, rather than a guessed 4096.
     const contextWindow: number | UnknownValue = normalizeContextWindow(
       nativeCapabilities.contextWindow
     );
@@ -262,7 +259,7 @@ export class AppleProvider implements LLMProvider {
    *
    * `nativeCapabilities.tokenCounting` is optional on the wire (a native
    * module built before this field existed sends nothing); missing defaults
-   * to `'estimated'` per DECISIONS.md D10 — see `NativeCapabilities.tokenCounting`.
+   * to `'estimated'` — see `NativeCapabilities.tokenCounting`.
    */
   private resolveTokenCounting(
     nativeCapabilities: Pick<NativeCapabilities, 'tokenCounting'>,
@@ -330,7 +327,7 @@ export class AppleProvider implements LLMProvider {
    * `SystemLanguageModel.tokenCount(for:)` (iOS 26.4+), the core heuristic
    * estimator otherwise.
    *
-   * The on-device floor is iOS 26.0 (DECISIONS.md D42), which is *below* 26.4,
+   * The on-device floor is iOS 26.0, which is *below* 26.4,
    * so "the native module resolved" no longer implies exact counting is
    * possible. This method re-derives the same `'exact'`/`'estimated'` answer
    * `capabilities()` would give (via {@link resolveTokenCounting}) and never
@@ -341,8 +338,8 @@ export class AppleProvider implements LLMProvider {
    * Estimating directly instead keeps the measurement's provenance honest:
    * `createMeasure` records it as `'providerEstimated'` (a normal, expected
    * answer for this OS range) rather than `'estimatorAfterCounterFailure'` (a
-   * D9-style malfunction), though both land on the same wider 256-token
-   * safety margin (D10) either way.
+   * model-stack malfunction), though both land on the same wider 256-token
+   * safety margin either way.
    *
    * When counting *is* exact and the underlying call still throws or returns
    * nonsense, this throws rather than falling back to an estimate itself —
@@ -352,7 +349,7 @@ export class AppleProvider implements LLMProvider {
    * from 64 tokens to 256. A silent estimate here would report an
    * exact-looking number and keep the narrow margin — which is how a
    * "measured" budget overflows. `ModelManagerError 1013` from these
-   * overloads is not hypothetical (D9).
+   * overloads is not hypothetical.
    */
   async countTokens(messages: readonly Message[]): Promise<number> {
     const native = this.requireNative();
@@ -398,7 +395,7 @@ export class AppleProvider implements LLMProvider {
     // and `native.generate` is one promise with no channel. Rather than build a
     // second tool protocol for the non-streaming path, a request carrying tools
     // runs on the streaming path and the events are collapsed into a result
-    // here (DECISIONS.md D24) — the `finish` event already carries exactly the
+    // here — the `finish` event already carries exactly the
     // `GenerateResult` this method returns.
     if (request.tools !== undefined && request.tools.length > 0) {
       return this.generateViaStream(request, options);

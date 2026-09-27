@@ -1,7 +1,7 @@
 /**
  * The provider interface — the contract this whole package is built around.
  *
- * Bespoke rather than Vercel AI SDK-shaped (DECISIONS.md D1): that spec has
+ * Bespoke rather than Vercel AI SDK-shaped: that spec has
  * no native place for availability with reason codes, token counting, or
  * capability discovery, which are the three things the router depends on. A
  * thin `LanguageModelV3` adapter over this interface stays possible later.
@@ -71,7 +71,7 @@ export interface LLMProvider {
    * Can this provider be used at all right now?
    *
    * Cheap enough to call on app start and on foreground (a model download
-   * may have finished). Remember DECISIONS.md D9: `available` means "nothing
+   * may have finished). Remember: `available` means "nothing
    * known is blocking", not "the next request will succeed" — never treat it
    * as a guarantee.
    */
@@ -91,7 +91,7 @@ export interface LLMProvider {
    *
    * Optional: present iff `capabilities().tokenCounting !== 'none'`. Apple
    * can answer exactly (iOS 26.4+ `tokenCount(for:)`) and estimates below
-   * that OS version — the on-device floor is iOS 26.0 (DECISIONS.md D42) — while
+   * that OS version — the on-device floor is iOS 26.0 — while
    * a cloud provider usually cannot count at all. Counting the *messages*
    * rather than a string is deliberate — per-message framing overhead is
    * provider-specific and only the provider knows it.

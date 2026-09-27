@@ -65,7 +65,7 @@ interface LLMProvider {
 
 `GenerateRequest` carries `messages`, optional `schema` (JSON Schema for structured output), optional `tools`, and sampling options (`temperature`, `maxOutputTokens`). `GenerateResult` carries `text` or `object`, `finishReason`, `usage` when known, and `providerId` so callers can see which provider answered.
 
-Before finalizing, look at whether the Vercel AI SDK's `LanguageModelV2` provider spec is a better target than a bespoke interface. If conforming to it costs little, do that, since it buys compatibility with an existing ecosystem. If it forces awkward compromises (it may around availability and token counting), keep the bespoke interface and write a thin adapter later. Record the decision and reasoning in `DECISIONS.md`.
+Before finalizing, look at whether the Vercel AI SDK's `LanguageModelV2` provider spec is a better target than a bespoke interface. If conforming to it costs little, do that, since it buys compatibility with an existing ecosystem. If it forces awkward compromises (it may around availability and token counting), keep the bespoke interface and write a thin adapter later.
 
 ### Normalized errors
 
@@ -109,7 +109,7 @@ These are the places a straightforward implementation goes wrong.
 
 ## 5. Phases
 
-Work in order. Each phase ends with its acceptance criteria met, tests green, and a short entry in `DECISIONS.md` for any non-obvious choice. Stop and check in with the maintainer at the marked points.
+Work in order. Each phase ends with its acceptance criteria met and tests green. Stop and check in with the maintainer at the marked points.
 
 ### Phase 0: reconnaissance and decisions
 
@@ -184,7 +184,7 @@ Acceptance: in the example app, toggling a "simulate unavailable" switch moves t
 
 ## 6. Working agreements
 
-- Verify every Apple API against the installed SDK before using it. If something in this plan turns out to be wrong, follow the SDK and note the discrepancy in `DECISIONS.md`.
+- Verify every Apple API against the installed SDK before using it. If something in this plan turns out to be wrong, follow the SDK and update the affected guidance.
 - Keep dependencies minimal. `core` and `openai` have none at runtime. Justify any addition elsewhere.
 - Keep the internal boundaries between `core`, `openai`, `apple`, and `react` clean even though they ship together. If the project ever outgrows one package, splitting along those lines should be a mechanical change.
 - Small, reviewable commits with messages that explain why.

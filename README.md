@@ -45,10 +45,6 @@ On-device Android generation is available in the separate, pre-release
 [`@taaltreelabs/on-device-llm-android`](https://github.com/taaltreelabs/on-device-llm-android)
 package. Check its device requirements and data-handling terms before using it.
 
-**iOS 26 validation:** compatibility and cloud fallback have been exercised in
-Simulators; successful on-device generation on a physical iOS 26 device remains
-unverified. See the [verification notes](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/research/ios26-compat.md).
-
 ## Quick start
 
 ### 1. Install and configure
@@ -196,8 +192,7 @@ shows integration patterns and provides a manual test environment.
 ## Contributing
 
 See [CONTRIBUTING.md](https://github.com/taaltreelabs/on-device-llm/blob/main/CONTRIBUTING.md)
-for local setup, repository layout, and checks. For implementation background, see
-[design decisions](https://github.com/taaltreelabs/on-device-llm/blob/main/DECISIONS.md).
+for local setup, repository layout, and checks.
 
 ## License
 

@@ -12,7 +12,7 @@ with an `unknown` error whose `cause` mentions `SensitiveContentAnalysisML error
 **What it is.** The on-device model stack is wedged. This is observed behavior on a
 development Mac, not a hypothetical: availability is a check on configuration, not a
 health check, which is why the documentation repeats that `available: true` means "nothing
-known is blocking", never "the next request will succeed" (D9).
+known is blocking", never "the next request will succeed".
 
 **Remedies, in order of increasing disruption.** Wait — it often clears itself within
 minutes. Toggle Apple Intelligence off and back on in Settings. Reboot the device or Mac.
@@ -32,7 +32,7 @@ Apple provider with no fallback, you will see the raw error; that is the honest 
 model, or `requireNativeModule('OnDeviceLlm')` fails outright.
 
 **Cause.** `expo-modules-autolinking` filters modules by deployment target. The podspec
-now declares iOS 16.4 (DECISIONS.md D42) — `ExpoModulesCore`'s own floor and the Expo
+now declares iOS 16.4 — `ExpoModulesCore`'s own floor and the Expo
 template's default — so this only bites an app whose own deployment target is set
 _below_ 16.4. If your app's Podfile platform is lower than that, `pod install`
 **silently omits the module entirely**: `Podfile.lock` has no entry for it, and the build
@@ -59,10 +59,10 @@ Application failed to launch: UIScene life cycle is required for apps built with
 **Cause.** Not this package: apps built with the iOS 27 SDK must use UIKit's scene-based
 life cycle, and the Expo 57 `prebuild` template still starts React Native from the
 `AppDelegate` with no scene. Any Expo 57 app built with Xcode for iOS 27 hits it, with or
-without this library (DECISIONS.md D40).
+without this library.
 
 **Fix.** Add the package's config plugin to `app.json` and prebuild again. It applies the
-patch below for you (DECISIONS.md D41):
+patch below for you:
 
 ```json
 {
@@ -151,7 +151,7 @@ Apple's `fm` CLI ships a Chat Completions-compatible server that is genuinely us
 testing this package's `openai` provider from Node against a real model, with no device
 and no cloud account. It is a **local development rig only, never a shipping dependency**:
 the macOS 27 license text arguably forbids programmatic use in a shipped product, and the
-binary is nowhere near the published package (D8). With that said, its quirks:
+binary is nowhere near the published package. With that said, its quirks:
 
 - **Every response is SSE**, even when the request does not set `stream: true`. The
   `openai` provider detects a `text/event-stream` content type on a non-streaming request

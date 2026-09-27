@@ -2,7 +2,7 @@
  * Whether a provider can be used at all, right now.
  *
  * Checked before routing (Phase 4) rather than discovered by failing a
- * request. Note the hard-won caveat from DECISIONS.md D9: **available is
+ * request. Note the observed limitation: **available is
  * necessary but not sufficient**. On the development Mac, availability
  * reported `available` while every generation failed — so a provider that
  * reports `available` is saying "nothing known is blocking me", not "the
@@ -20,11 +20,11 @@
  * the taxonomy is shared with cloud and (eventually) Android providers.
  * `unsupportedPlatform` is ours, for the case Apple's enum cannot express:
  * the framework is not there at all (Android, web, or an OS below the
- * iOS 26.0 / macOS 26.0 floor — DECISIONS.md D42). Importing the package root
+ * iOS 26.0 / macOS 26.0 floor). Importing the package root
  * on such a platform must never throw; it must report this
  * (docs/plan.md §4).
  *
- * `unsupportedLocale` is deliberately **absent**. Per DECISIONS.md D7,
+ * `unsupportedLocale` is deliberately **absent**. In this interface,
  * Apple has no locale availability reason: locale problems surface at
  * generation time as `LanguageModelError.unsupportedLanguageOrLocale`, and
  * are predictable up front via `supportsLocale()`. A model that works fine

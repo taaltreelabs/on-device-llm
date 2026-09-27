@@ -5,7 +5,7 @@
 //  JSON Schema (from JavaScript) <-> `GenerationSchema`, and
 //  `GeneratedContent` -> JSON text.
 //
-//  DECISIONS.md D23: the schema arriving here has already been validated and
+//  The schema arriving here has already been validated and
 //  normalised in TypeScript (`src/core/schema.ts` + `src/apple/schema.ts`) into
 //  the exact dialect `GenerationSchema`'s `Codable` conformance accepts —
 //  every object node carrying `title`, `additionalProperties`, `required` and

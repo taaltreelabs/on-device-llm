@@ -13,10 +13,10 @@ Pod::Spec.new do |s|
   # Platform floor: iOS 16.4, the floor of ExpoModulesCore itself
   # (`ExpoModulesCore.podspec`), not the floor of FoundationModels. Expo
   # autolinking silently drops any pod whose platform is above the app's
-  # deployment target (DECISIONS.md D22), and the Expo template's default
+  # deployment target, and the Expo template's default
   # target is 16.4, so a higher floor here would make every app that still
   # supports older iOS lose the module without a build error. This supersedes
-  # the iOS 27 floor of D4.
+  # the previous iOS 27 floor.
   #
   # FoundationModels is iOS 26.0, so on this floor it is weak-linked (below)
   # and nothing touches it before a runtime check: every `AsyncFunction` in

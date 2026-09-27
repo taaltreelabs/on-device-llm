@@ -2,11 +2,11 @@
  * The source transforms behind the config plugin, kept free of any Expo
  * import so they can be tested as plain string-in, string-out functions.
  *
- * Why this exists (DECISIONS.md D40, D41): apps built with the iOS 27 SDK must
+ * Why this exists: apps built with the iOS 27 SDK must
  * use UIKit's scene-based life cycle, and the Expo 57 `prebuild` template
  * still starts React Native from `AppDelegate` with no scene, so every fresh
  * app crashes at launch with "UIScene life cycle is required for apps built
- * with this SDK". The fix is the hand migration verified on iOS 27 in D40:
+ * with this SDK". The fix is the hand migration verified on iOS 27:
  *
  * 1. `AppDelegate` adopts `ExpoReactNativeFactoryProvider` and names the
  *    module, so the scene delegate can find the factory it built;

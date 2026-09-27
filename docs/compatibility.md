@@ -4,7 +4,7 @@
 
 | Requirement                   | Value                                                                                                                                                                                                                                                                                                         |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| iOS / macOS (on-device model) | **26.0 or newer** at runtime, with Apple Intelligence enabled (DECISIONS.md D42). The package itself links into apps at iOS 16.4 or above; below iOS 26 it reports `unsupportedPlatform` and routes to your cloud provider. See [What differs on iOS 26](#what-differs-on-ios-26) for the gaps versus iOS 27. |
+| iOS / macOS (on-device model) | **26.0 or newer** at runtime, with Apple Intelligence enabled. The package itself links into apps at iOS 16.4 or above; below iOS 26 it reports `unsupportedPlatform` and routes to your cloud provider. See [What differs on iOS 26](#what-differs-on-ios-26) for the gaps versus iOS 27. |
 | Example app Expo SDK          | 57                                                                                                                                                                                                                                                                                                            |
 | Example app React Native      | 0.86                                                                                                                                                                                                                                                                                                          |
 | React                         | Optional peer dependency; required only for `.../react`                                                                                                                                                                                                                                                       |
@@ -27,18 +27,18 @@ detail? }`. The reasons:
 
 | Reason                | Means                                                                                                                                      | What an app should do                                                                         |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `deviceNotEligible`   | The hardware cannot run the model. Also reported when `createAppleProvider({ locale })` names a language the model does not support (D19). | Permanent. Route to the cloud, or hide the on-device feature.                                 |
+| `deviceNotEligible`   | The hardware cannot run the model. Also reported when `createAppleProvider({ locale })` names a language the model does not support. | Permanent. Route to the cloud, or hide the on-device feature.                                 |
 | `notEnabled`          | Eligible hardware, Apple Intelligence switched off.                                                                                        | Ask the user to enable it in Settings.                                                        |
 | `modelNotReady`       | Enabled, but assets are still downloading or otherwise not ready.                                                                          | Transient. Re-check on foreground — `useAvailability`'s `resubscribe` option exists for this. |
 | `unsupportedPlatform` | No such capability here: Android, web, Node, or an OS below the floor.                                                                     | Permanent for this install. The import still works and the provider still answers politely.   |
 
-`unsupportedLocale` is deliberately **not** an availability reason (D7): Apple's enum has
+`unsupportedLocale` is deliberately **not** an availability reason: Apple's enum has
 exactly three cases, and a model that works in English is not "unavailable" because you
 asked in Polish. It is an `LLMError` code raised per request, and it is a fallback
 trigger by default.
 
 One caveat is load-bearing enough to repeat: **`available: true` means "nothing known is
-blocking", not "the next request will succeed"** (D9). See
+blocking", not "the next request will succeed"**. See
 [Troubleshooting](troubleshooting.md#availability-says-available-but-every-generation-fails).
 
 ## Feature support
@@ -54,11 +54,11 @@ blocking", not "the next request will succeed"** (D9). See
 
 `UNKNOWN` is a real, typed value exported from `core`, not a stand-in for zero or
 infinity. The context manager and the router both handle it explicitly rather than
-guessing (D11).
+guessing.
 
 ## What differs on iOS 26
 
-The on-device model runs from iOS 26.0, not only 27.0 (DECISIONS.md D42), but the iOS 26
+The on-device model runs from iOS 26.0, not only 27.0, but the iOS 26
 bridge has less to work with than iOS 27's. All gaps disappear at iOS 27; none of them
 affect the `openai` provider or the router.
 
@@ -69,17 +69,16 @@ affect the `openai` provider or the router.
 | `unsupportedLocale` error                          | Names the offending `locale`            | No `locale`                                                                       |
 | `rateLimited` error                                | Carries `resetDate`                     | No `resetDate`                                                                    |
 | `usage` / `finishReason`                           | Real per-response `usage`               | No `usage`; `finishReason` is always `'stop'`, even when truncated                |
-| Token counting                                     | Always `exact`                          | `exact` from 26.4 onward, `estimated` on 26.0–26.3 (256-token safety margin, D10) |
+| Token counting                                     | Always `exact`                          | `exact` from 26.4 onward, `estimated` on 26.0–26.3 (256-token safety margin) |
 | `modelLabel`                                       | `variant.displayName`, queried live     | Fixed string `"Apple Foundation Model"`                                           |
 | `supportsVision` / `supportsReasoning`             | Queried live                            | Fixed `false`                                                                     |
 | `supportsGuidedGeneration` / `supportsToolCalling` | Queried live                            | Fixed `true`                                                                      |
 | `contextWindow`                                    | Device-reported                         | `4096` below iOS 26.4                                                             |
 
-**Honesty note:** the iOS 26 fallbacks above have been exercised live on iOS 26.0 and
+**Simulator checks:** the iOS 26 fallbacks above have been exercised live on iOS 26.0 and
 26.5 Simulators (capability fallbacks, estimated token counting, and the iOS 26 error
 mapping confirmed). On 26.5, where the on-device model fails with a transient error, the
-router's fallback to the cloud provider completed end to end. A successful on-device
-generation on a real iOS 26 device is still pending.
+router's fallback to the cloud provider completed end to end.
 The below-26 `unsupportedPlatform` path has now run live too, on an iOS 18.6 Simulator,
 where the app launched normally and every call reported the documented fallback — but
 still only on a Simulator, not a physical pre-26 iPhone — see

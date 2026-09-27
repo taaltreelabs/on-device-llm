@@ -18,7 +18,7 @@
  *    consumer's loop, and an `AbortSignal` all end up calling native
  *    `cancel(requestId)`.
  *
- * It is also the JavaScript half of the tool protocol (DECISIONS.md D24): a
+ * It is also the JavaScript half of the tool protocol: a
  * `toolCall` event starts the request's handler *without blocking the event
  * loop* — two tool calls can be in flight at once — and its outcome goes back
  * through `resolveToolCall(callId, …)`. A handler that throws fails the
@@ -276,7 +276,7 @@ export async function* bridgeNativeStream(
           const usage = toTokenUsage(event.result.usage);
           const result: GenerateResult = {
             // Authoritative: the last native snapshot, not the concatenation
-            // of the deltas above. They are equal unless the D18 fallback
+            // of the deltas above. They are equal unless the snapshot-diff fallback
             // fired (see ios/Core/SnapshotDiffer.swift).
             text: event.result.text,
             ...(event.result.objectJson !== undefined

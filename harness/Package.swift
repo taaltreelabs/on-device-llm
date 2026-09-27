@@ -2,7 +2,7 @@
 //
 // The macOS verification harness for `ios/Core`.
 //
-// `ios/Core/*.swift` imports no Expo (DECISIONS.md D16), which is what makes
+// `ios/Core/*.swift` imports no Expo, which is what makes
 // this possible: the same FoundationModels code that ships in the iOS module is
 // compiled here and run against the **real on-device model** on a development
 // Mac. Unit tests with a fake native module cannot tell us whether a

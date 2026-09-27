@@ -1,7 +1,7 @@
 /**
  * `SchemaNode` -> the JSON Schema dialect Apple's `GenerationSchema` decodes.
  *
- * DECISIONS.md D23 (which validates D6): `GenerationSchema` is `Codable` and
+ * `GenerationSchema` is `Codable` and
  * decodes a JSON-Schema-shaped document directly, so the route from a
  * developer's schema to a native one is *normalize in TypeScript, then
  * `JSONDecoder` in Swift* — no `DynamicGenerationSchema` tree-walk across the

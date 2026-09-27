@@ -18,7 +18,7 @@ enum ModelInfo {
   /// `SystemLanguageModel.Availability` -> `src/core`'s `Availability`.
   ///
   /// The framework has exactly three unavailable reasons and **none of them is
-  /// locale-related** (DECISIONS.md D7). `unsupportedPlatform` is not this
+  /// locale-related**. `unsupportedPlatform` is not this
   /// function's business: where there is no native module at all (Android,
   /// web) the TypeScript layer reports it, and on iOS older than 26 this type
   /// does not exist and `OnDeviceLlmModule`'s `#available` guard reports it
@@ -62,7 +62,7 @@ enum ModelInfo {
   /// - `contextWindow`: `SystemLanguageModel.contextSize`, which is a combined
   ///   input+output budget. Guarded at `<= 0` and reported as `0`, which the
   ///   TypeScript side turns into `UNKNOWN` via `normalizeContextWindow`
-  ///   (D9/D11) — it really has been observed returning `0` on a machine whose
+  ///   — it really has been observed returning `0` on a machine whose
   ///   model assets were wedged, and an unknown window is a typed state, not a
   ///   number to guess. `contextSize` is `@backDeployed(before: 26.4)`
   ///   (sdk-surface.md §1, "Context size"): below 26.4 the back-deployed
@@ -91,7 +91,7 @@ enum ModelInfo {
   ///   `SystemLanguageModel.tokenCount(for:)` exists, else `"estimated"` —
   ///   the TypeScript side then measures with its own estimator and never
   ///   calls `countTokens` (which throws `invalidRequest` below 26.4). "Exact"
-  ///   describes the API, not this machine: D9's wedged-assets state makes it
+  ///   describes the API, not this machine: a wedged-assets state makes it
   ///   throw even where it exists, and the context manager already handles
   ///   that per call.
   /// - `usageReporting`: `true` on iOS/macOS 27+, where `Response.usage` /
@@ -133,7 +133,7 @@ enum ModelInfo {
     return info
   }
 
-  /// Exact locale support, per D7's availability pre-check.
+  /// Exact locale support, used by the availability pre-check.
   ///
   /// Delegates to `SystemLanguageModel.supportsLocale`, so the answer is the
   /// framework's own rather than a string match against the `locales` list.

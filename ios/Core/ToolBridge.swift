@@ -6,7 +6,7 @@
 //  (docs/plan.md §4: "the native model calls a Swift `Tool`, which has to
 //  invoke a JS function and await its result").
 //
-//  The protocol, in full (DECISIONS.md D24):
+//  The protocol, in full:
 //
 //    model -> BridgedTool.call(arguments:)
 //          -> registry registers a continuation under a fresh callId
@@ -16,8 +16,7 @@
 //          -> the continuation resumes, `call` returns text to the model
 //          -> generation continues to completion
 //
-//  Three things every prior-art bridge we surveyed gets wrong (DECISIONS.md
-//  D2) and this file exists to get right:
+//  Three things every prior-art bridge we surveyed gets wrong and this file exists to get right:
 //
 //  1. **Timeout.** A handler that never answers must not pin the neural engine
 //     forever. Each call arms a timer; when it fires the continuation is

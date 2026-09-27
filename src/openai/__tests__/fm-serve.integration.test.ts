@@ -1,17 +1,16 @@
 /**
- * Integration tests against a live `fm serve` (docs/plan.md §5 Phase 1,
- * DECISIONS.md D8). Targets `process.env.FM_SERVE_URL ?? 'http://127.0.0.1:1976/v1'`.
+ * Integration tests against a live `fm serve` (docs/plan.md §5 Phase 1). Targets `process.env.FM_SERVE_URL ?? 'http://127.0.0.1:1976/v1'`.
  *
- * `fm serve` is a local-dev-only test rig (D8) — never a shipped
+ * `fm serve` is a local-dev-only test rig — never a shipped
  * dependency — so this suite runs opportunistically: it probes reachability
  * *and* a real completion before deciding whether to run at all, and skips
- * cleanly with a clear reason otherwise. Two probes, not one, because D9's
- * lesson generalizes here too: a server can accept connections (health
+ * cleanly with a clear reason otherwise. Two probes, not one, because availability
+ * alone is insufficient: a server can accept connections (health
  * passes) while every real generation 500s (as has been directly observed
  * on the maintainer's Mac — `SensitiveContentAnalysisML error 15` — the
  * exact scenario this suite must not hang or fail CI on).
  *
- * Schemas used below deliberately avoid recursive `$defs` — D8 records that
+ * Schemas used below deliberately avoid recursive `$defs` — testing showed that
  * those hang `fm serve` *permanently*, surviving past the offending
  * request, so a broken test here would poison every later local run.
  */
@@ -34,7 +33,7 @@ async function probeFmServe(): Promise<
   }
 
   // Generation: can it actually answer? Health alone is not sufficient
-  // (DECISIONS.md D9) — the stack has been observed reporting healthy while
+  // — the stack has been observed reporting healthy while
   // every real generation 500s.
   try {
     const provider = createOpenAIProvider({ baseUrl: BASE_URL, model: MODEL });
@@ -60,7 +59,7 @@ if (!probe.ok) {
   console.warn(
     `[fm-serve.integration.test] Skipping suite: ${probe.reason}\n` +
       `  This is expected when fm serve is not running, or when the on-device stack is` +
-      ' wedged (see DECISIONS.md D9); it is not a bug in this package.'
+      ' wedged; it is not a bug in this package.'
   );
 }
 

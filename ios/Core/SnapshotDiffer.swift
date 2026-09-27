@@ -3,7 +3,7 @@
 //  OnDeviceLlm
 //
 //  Turns FoundationModels' cumulative response snapshots into the deltas our
-//  `StreamEvent` union carries (DECISIONS.md D5).
+//  `StreamEvent` union carries.
 //
 //  `LanguageModelSession.ResponseStream.Element` is literally named `Snapshot`
 //  and, for `Content == String`, each iteration yields the whole accumulated
@@ -15,7 +15,7 @@
 
 import Foundation
 
-/// One diff step. `reset` is the D18 fallback flag.
+/// One diff step. `reset` is the snapshot-reset flag.
 struct SnapshotDelta: Sendable, Equatable {
   let text: String
   let reset: Bool
@@ -23,7 +23,7 @@ struct SnapshotDelta: Sendable, Equatable {
 
 /// Stateful over one stream; not shared between requests.
 ///
-/// **DECISIONS.md D18 — the non-extension fallback.** In the normal case each
+/// **The non-extension fallback.** In the normal case each
 /// snapshot extends the previous one and the emitted deltas concatenate
 /// *exactly* to the final text. A snapshot that is not an extension means the
 /// model rewrote text we have already handed to the consumer, and a delta

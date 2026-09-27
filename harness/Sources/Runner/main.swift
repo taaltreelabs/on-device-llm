@@ -43,12 +43,12 @@ guard modelIsUsable() else {
 // label `capabilities()` reports is the one worth seeing anyway.
 print("model: \(ModelInfo.capabilities()["modelLabel"] as? String ?? "?")")
 
-// DECISIONS.md D9, in its natural habitat: `availability` reports `.available`
+// Observed model-stack failure: `availability` reports `.available`
 // while every generation fails with `com.apple.SensitiveContentAnalysisML
 // error 15` wrapping `ModelManagerError 1013`, `contextSize` reads 0, and the
 // variant quietly downgrades. Apple's own `fm` CLI fails identically, so it is
 // the machine's model assets, not this code — but the availability check alone
-// cannot tell the two apart, which is exactly why D9 exists.
+// cannot tell the two apart, so a generation probe is needed.
 //
 // Without this preflight the run reports ~28 failures that say nothing about
 // the change under test, and a real regression would be invisible among them.
@@ -60,7 +60,7 @@ if let blocker = await preflightFailure() {
 
     \(blocker)
 
-    This is the DECISIONS.md D9 state: the model assets on this machine are
+    The model stack is unavailable: the model assets on this machine are
     wedged (`fm respond` fails the same way). Logic-only checks would still
     pass, but every check that needs the model would fail for reasons that have
     nothing to do with the code. Nothing was verified.

@@ -40,7 +40,7 @@ Two more need real hardware or a real server:
   round-trips, snapshot-to-delta conversion, cancellation, prewarming, token counting, the
   supported/unsupported schema constraint matrix, and a full tool round trip with a timeout
   and a mid-call cancel. Needs macOS 27 and a healthy model; it skips rather than fails
-  when availability is `available` but generation is wedged (D9). This is the regression
+  when availability is `available` but generation is wedged. This is the regression
   test for a future OS widening or narrowing what the framework supports.
 - **`npm run acceptance:fm`** — the Phase 1 acceptance script: a plain Node script
   importing only the **built** `core` and `openai` entry points, holding a multi-turn

@@ -9,7 +9,7 @@
 //
 //  Two taxonomies, because the platform floor is iOS 26.0 / macOS 26.0 — the
 //  release that shipped FoundationModels (docs/research/ios26-compat.md; this
-//  supersedes the iOS 27 floor of DECISIONS.md D4). iOS 27 replaced iOS 26's
+//  supersedes the iOS 27 floor used previously). iOS 27 replaced iOS 26's
 //  `LanguageModelSession.GenerationError` wholesale with `LanguageModelError`,
 //  `LanguageModelSession.Error`, `SystemLanguageModel.Error` and
 //  `GeneratedContent.ParsingError` (docs/research/sdk-surface.md §5), and all
@@ -67,15 +67,15 @@ import FoundationModels
 ///
 /// - **`refusal` -> `guardrail`.** The framework distinguishes a guardrail
 ///   trip from a model refusal, and `LLMErrorCode` does not yet (a dedicated
-///   `refusal` code is listed as a future addition in `src/core/errors.ts`, in
-///   the same spirit as D15: add a code when something branches on it). Both
+///   `refusal` code is listed as a future addition in `src/core/errors.ts`, following
+///   the rule to add a code when something branches on it). Both
 ///   mean "the model declined", both default to *not* falling through to the
 ///   cloud, so collapsing them changes no behaviour today. `Refusal` also
 ///   carries an `explanation` that triggers a second generation — never
 ///   fetched here, because a failed request must not silently cost a round
 ///   trip.
 /// - **`timeout` -> `unknown` with `transient: true`.** `unknown` is the
-///   taxonomy's transient lane (D9) and `transient` is exactly the hint the
+///   taxonomy's transient lane and `transient` is exactly the hint the
 ///   Phase 4 router needs. A `timeout` code would say more, but nothing
 ///   consumes it yet.
 @available(iOS 26.0, macOS 26.0, *)
@@ -156,7 +156,7 @@ private func map(_ error: LanguageModelError) -> BridgeErrorPayload {
       code: "contextOverflow",
       message: "The request exceeds the model's context window")
     // Both numbers, measured by the framework — the Phase 2 context manager
-    // uses them to correct its estimator (D10/D11).
+    // uses them to correct its estimator.
     payload.contextSize = detail.contextSize
     payload.tokenCount = detail.tokenCount
     payload.nativeDetail = detail.debugDescription
@@ -257,7 +257,7 @@ private func map(_ error: SystemLanguageModel.Error) -> BridgeErrorPayload {
   switch error {
   case let .assetsUnavailable(detail):
     // `availability` reporting `.available` is not a promise that the assets
-    // are actually usable (D9). `modelNotReady` is the reason a caller can act
+    // are actually usable. `modelNotReady` is the reason a caller can act
     // on: it may resolve on its own once a download or activation completes.
     var payload = BridgeErrorPayload(
       code: "unavailable", message: "The model's assets are unavailable")
@@ -317,7 +317,7 @@ private struct LegacyGenerationErrorMapper: GenerationErrorMapping {
     switch generationError {
     case let .exceededContextWindowSize(detail):
       // No `contextSize`/`tokenCount`: iOS 26 does not say by how much. The
-      // context manager then corrects nothing and keeps its estimate (D10/D11)
+      // context manager then corrects nothing and keeps its estimate
       // — worse than on 27, but not wrong.
       payload = BridgeErrorPayload(
         code: "contextOverflow",
@@ -325,7 +325,7 @@ private struct LegacyGenerationErrorMapper: GenerationErrorMapping {
       context = detail
 
     case let .assetsUnavailable(detail):
-      // Same reasoning as the iOS 27 `SystemLanguageModel.Error` row (D9).
+      // Same reasoning as the iOS 27 `SystemLanguageModel.Error` row.
       payload = BridgeErrorPayload(
         code: "unavailable", message: "The model's assets are unavailable")
       payload.reason = "modelNotReady"
@@ -392,7 +392,7 @@ private struct LegacyGenerationErrorMapper: GenerationErrorMapping {
   }
 }
 
-// MARK: - Untyped NSError fallback (DECISIONS.md D9)
+// MARK: - Untyped NSError fallback
 
 /// Not every failure surfaces as a typed enum. Observed live on a development
 /// Mac while `availability == .available`: `com.apple.SensitiveContentAnalysisML

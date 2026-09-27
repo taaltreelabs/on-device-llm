@@ -4,7 +4,7 @@
 //
 //  Which JSON Schema constraints the on-device model accepts **at generation
 //  time** — a different and stricter question than which ones
-//  `GenerationSchema` decodes, and the finding that shaped DECISIONS.md D23.
+//  `GenerationSchema` decodes, and the supported constraint subset.
 //
 //  docs/research/sdk-surface.md §7 built each construct and confirmed the
 //  schema was accepted. That is where the surprise lives: `pattern` builds, and

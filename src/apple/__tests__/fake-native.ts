@@ -24,7 +24,7 @@ export class FakeNativeModule implements AppleNativeModule {
   // Defaults to the iOS 27 shape — exact counting and real per-response usage
   // — so every existing test that does not touch these two fields keeps
   // exercising the behaviour it was written for. Tests for the iOS
-  // 26.0-26.3 floor (DECISIONS.md D42) override both explicitly.
+  // 26.0-26.3 floor override both explicitly.
   capabilitiesResult: NativeCapabilities = {
     contextWindow: 8192,
     locales: ['en', 'nl', 'fr', 'de', 'es'],

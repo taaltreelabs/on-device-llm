@@ -21,7 +21,7 @@ import type { UnavailableReason } from './availability';
 
 /**
  * Failure categories. Matches docs/plan.md §2 with one amendment from
- * DECISIONS.md D7: `unsupportedLocale` is a top-level code raised at
+ * `unsupportedLocale` is a top-level code raised at
  * generation time, not an availability reason.
  *
  * Sizing note: codes worth adding once something consumes them are
@@ -81,7 +81,7 @@ export interface GuardrailErrorDetails {
 /**
  * The model does not support the language of the request.
  *
- * DECISIONS.md D7: a generation-time failure (Apple's
+ * A generation-time failure (Apple's
  * `unsupportedLanguageOrLocale`), never an availability reason. Predictable
  * in advance from `capabilities().locales`.
  */
@@ -120,7 +120,7 @@ export interface NetworkErrorDetails {
 
 /**
  * The request itself is wrong and will fail again unchanged — an
- * unsupported schema construct (DECISIONS.md D6), an unrecognised message
+ * unsupported schema construct, an unrecognised message
  * role, a sampling option the provider has no equivalent for. Never retried,
  * never failed over.
  */
@@ -132,7 +132,7 @@ export interface InvalidRequestErrorDetails {
  * Unclassified failure. Always constructed with the original error as
  * `cause` (docs/plan.md §2: "always with the original error attached").
  *
- * This is the lane DECISIONS.md D9 requires: the native layer has been
+ * This error handles native system failures: the native layer has been
  * observed throwing untyped `NSError`s (`ModelManagerError 1013`,
  * `SensitiveContentAnalysisML error 15`) while reporting itself available.
  * Those must not crash the request path and must not masquerade as a
@@ -312,7 +312,7 @@ export function isAbortError(value: unknown): boolean {
  * ```
  *
  * @param options.transient - default for the `unknown` fallback's router
- * hint (DECISIONS.md D9). An already-classified `LLMError` passes through
+ * hint. An already-classified `LLMError` passes through
  * untouched.
  */
 export function toLLMError(

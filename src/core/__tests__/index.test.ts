@@ -76,7 +76,7 @@ describe('core public API', () => {
 });
 
 describe('unknown-value sentinel', () => {
-  it('guards a native context size of 0 (DECISIONS.md D9) instead of trusting it', () => {
+  it('guards a native context size of 0 instead of trusting it', () => {
     expect(normalizeContextWindow(0)).toBe(UNKNOWN);
     expect(normalizeContextWindow(-1)).toBe(UNKNOWN);
     expect(normalizeContextWindow(Number.NaN)).toBe(UNKNOWN);
@@ -190,7 +190,7 @@ describe('type-level contracts', () => {
       providers: [new MockProvider({ id: 'mock', turns: [{ type: 'result', text: 'hoi' }] })],
     });
     const outer: LLMProvider = createRouter({ providers: [inner] });
-    // The task tag rides on GenerateRequest (DECISIONS.md D29) and providers
+    // The task tag rides on GenerateRequest and providers
     // that do not route on it simply ignore it.
     const tagged: GenerateRequest = {
       messages: [{ role: 'user', content: 'hoi' }],

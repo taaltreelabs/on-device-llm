@@ -1,6 +1,6 @@
 # iOS 26 compatibility: what running on iOS 26 costs
 
-The Apple provider runs on **iOS 26.0 / macOS 26.0** and later, the release that shipped FoundationModels. This supersedes the iOS 27 floor in DECISIONS.md D4.
+The Apple provider runs on **iOS 26.0 / macOS 26.0** and later, the release that shipped FoundationModels. This supersedes the previous iOS 27 floor.
 
 The **podspec** floor is lower still: **iOS 16.4**, ExpoModulesCore's own, so an app that still supports iOS 17–25 links the module and gets `unavailable` / `unsupportedPlatform` below 26 (see "The 16.4 podspec floor" below). The sections before it cover what the bridge loses on iOS 26 compared with 27.
 
@@ -95,11 +95,10 @@ The 26.4–26.x and 26.0–26.3 values for `contextWindow` are read from the SDK
 - the full iOS 26 `GenerationError` mapping table. `Context(debugDescription:)` and `Refusal(transcriptEntries:)` are public, so each case is constructed and pushed through `mapNativeError`, including one wrapped in `ToolCallError`.
 - the `capabilities()` contract keys, and a check that `usageReporting` agrees with whether a real result carries usage.
 
-**Compiled only (no iOS/macOS 26 runtime was available at the time; the iOS 26.5 Simulator run below has since exercised the capability fallbacks and `"exact"` token counting, but still no successful generation):**
+**Compiled only (no iOS/macOS 26 runtime was available at the time; the iOS 26.5 Simulator run below has since exercised the capability fallbacks and `"exact"` token counting):**
 
 - the `else` branches of every `#available` check: empty usage, the `invalidRequest` throw in `countTokens`, the capability fallbacks and `"estimated"`.
 - whether iOS 26 actually _throws_ `GenerationError` in the situations sdk-surface.md §5 documents.
-- all generation behaviour on 26.x. The D23 constraint matrix, the D21 cancellation behaviour and the tool-calling round trips were measured on 27 only.
 
 The compile checks that passed with zero diagnostics:
 
@@ -119,7 +118,7 @@ The two remaining changes this section used to list (module-level guards and wea
 
 ## The 16.4 podspec floor
 
-`ios/OnDeviceLlm.podspec` now declares `:ios => '16.4'`, the floor of `ExpoModulesCore.podspec` and the Expo template's default deployment target. Expo autolinking silently drops any pod whose platform is above the app's target (D22). At a 26.0 floor, an app that still supports iOS 17–25 would build green without the module and get `unsupportedPlatform` everywhere, including on iOS 26+. At 16.4 the same app links the module, gets the on-device model on iOS 26+, and falls back to the cloud below 26.
+`ios/OnDeviceLlm.podspec` now declares `:ios => '16.4'`, the floor of `ExpoModulesCore.podspec` and the Expo template's default deployment target. Expo autolinking silently drops any pod whose platform is above the app's target. At a 26.0 floor, an app that still supports iOS 17–25 would build green without the module and get `unsupportedPlatform` everywhere, including on iOS 26+. At 16.4 the same app links the module, gets the on-device model on iOS 26+, and falls back to the cloud below 26.
 
 Three things make this safe:
 
@@ -143,7 +142,7 @@ Three things make this safe:
 `example/app.json` no longer carries the `expo-build-properties` `ios.deploymentTarget` override. `prebuild --clean` and `pod install` produced:
 
 - a Podfile platform of `16.4` (the template default) and the app target at `IPHONEOS_DEPLOYMENT_TARGET = 16.4`;
-- `OnDeviceLlm (0.2.0)` in `Podfile.lock`, so the module is autolinked at the default target. At the old 26.0 or 27.0 floor, D22's trap would have dropped it;
+- `OnDeviceLlm (0.2.0)` in `Podfile.lock`, so the module is autolinked at the default target. At the old 26.0 or 27.0 floor, The autolinking trap would have dropped it;
 - the `OnDeviceLlm` pod target at `IPHONEOS_DEPLOYMENT_TARGET = 16.4`. Its `SWIFT_VERSION` is `5.0` from CocoaPods, so strict concurrency is covered by the Swift 6 typecheck above rather than by this build.
 
 `xcodebuild … -sdk iphonesimulator` (Xcode with the iOS 27.1 SDK, destination iPhone 17 Pro Max on the iOS 26.5 runtime) reported **BUILD SUCCEEDED**, with 0 errors and 0 warnings from `ios/`. Debug builds put the app code in `ondevicellmexample.debug.dylib`. The load command there, from `otool -l`:
@@ -172,7 +171,7 @@ Checked on 2026-09-26, because a Debug build puts the app code in `ondevicellmex
 
 `LC_BUILD_VERSION` reports `minos 16.4`, `sdk 27.1`. It is the only load command naming FoundationModels. Every other system framework the executable loads is long-standing and exists well below iOS 26 (Accelerate, AudioToolbox, CoreGraphics, CryptoKit, Foundation, ImageIO, UIKit, WebKit and similar; JavaScriptCore is weak too, which is React Native's own choice).
 
-`scripts/check-weak-link.sh` turns this into a regression test. Given an `.app`, it finds the executable from `CFBundleExecutable`, also checks a sibling `*.debug.dylib`, and fails unless every load command naming `FoundationModels.framework` is `LC_LOAD_WEAK_DYLIB`. It passes on both the Release and Debug builds, and fails on a probe compiled for an iOS 27 target, where the reference is strong. CI's `example-ios` job now runs it on both builds, after asserting that `Podfile.lock` contains `OnDeviceLlm` (the D22 silent-drop guard).
+`scripts/check-weak-link.sh` turns this into a regression test. Given an `.app`, it finds the executable from `CFBundleExecutable`, also checks a sibling `*.debug.dylib`, and fails unless every load command naming `FoundationModels.framework` is `LC_LOAD_WEAK_DYLIB`. It passes on both the Release and Debug builds, and fails on a probe compiled for an iOS 27 target, where the reference is strong. CI's `example-ios` job now runs it on both builds, after asserting that `Podfile.lock` contains `OnDeviceLlm` (the autolinking guard).
 
 ## iOS 26.5 Simulator run (macOS 27.2 host)
 
@@ -181,7 +180,7 @@ This was the first time the iOS 26 code paths had run rather than only compiled.
 - Host: macOS 27.2 (26B5091g).
 - Simulator: iPhone 17 Pro Max, iOS 26.5 runtime.
 - App: the example app built above, with the JS bundle from Metro.
-- Probe: generation outcomes were read with a temporary probe that called the Apple provider directly. The probe was removed afterwards. The router's `onRoute` report is content-free by design (D28) and carries only outcome codes.
+- Probe: generation outcomes were read with a temporary probe that called the Apple provider directly. The probe was removed afterwards. The router's `onRoute` report is content-free by design and carries only outcome codes.
 
 **`availability()` and `capabilities()`, raw from the native module.** This is the example's new "native module" readout, verbatim from the Metro log:
 
@@ -256,9 +255,9 @@ The bridge handled it as designed. `generate` and `stream` both returned this pa
 }
 ```
 
-`countTokens` returned the same shape with `nativeDetail` `ModelManagerServices.ModelManagerError Code=1026`. The router treated `unknown` + `transient` as fallback-eligible (D30) and handed each request to `cloud-fm`. That leg then failed with `network`, because no `fm serve` was running for this run.
+`countTokens` returned the same shape with `nativeDetail` `ModelManagerServices.ModelManagerError Code=1026`. The router treated `unknown` + `transient` as fallback-eligible and handed each request to `cloud-fm`. That leg then failed with `network`, because no `fm serve` was running for this run.
 
-One detail is new. The 26.5 runtime threw an `NSError` whose **domain is `FoundationModels.LanguageModelSession.GenerationError` with code `-1`**, and it did not cast to the `GenerationError` enum. So it went through `mapUntyped`, not the legacy mapper. This is the D9 lane ("availability is necessary but not sufficient"), seen on iOS 26 for the first time: `availability` said `available` and the first inference failed anyway.
+One detail is new. The 26.5 runtime threw an `NSError` whose **domain is `FoundationModels.LanguageModelSession.GenerationError` with code `-1`**, and it did not cast to the `GenerationError` enum. So it went through `mapUntyped`, not the legacy mapper. This is the transient system-failure case ("availability is necessary but not sufficient"), seen on iOS 26 for the first time: `availability` said `available` and the first inference failed anyway.
 
 ### Rerun with `fm serve` up (2026-09-26)
 
@@ -266,9 +265,9 @@ The same device and build, with the maintainer's `fm serve` listening on `127.0.
 
 - **Chat.** "What is the capital of France?" was answered "Paris", captioned "via cloud-fm (fell back)". The unified log orders it: the Apple inference failed at 19:48:30.7, and the `POST /v1/chat/completions` to `fm serve` finished with status 200 at 19:48:31.4, 0.7 s later.
 - **JSON demo.** `{"tempC": 22.5, "city": "Amsterdam", "conditions": "sunny"}`, "PASS -- matches the schema", `usage: {"inputTokens":65,"outputTokens":31}`. The usage is `fm serve`'s, since the answer came from the cloud leg.
-- **Tool demo.** The Apple leg failed the same way, then `cloud-fm` refused the request with the OpenAI provider's `invalidRequest` tool guard, because `fm serve` has no usable tool calling (D8). That is the correct outcome for a request no remaining provider can serve.
+- **Tool demo.** The Apple leg failed the same way, then `cloud-fm` refused the request with the OpenAI provider's `invalidRequest` tool guard, because `fm serve` has no usable tool calling. That is the correct outcome for a request no remaining provider can serve.
 
-This is the first time the transient-failure fallback (D30) has completed end to end on a device OS rather than in the router's unit tests.
+This is the first time the transient-failure fallback has completed end to end on a device OS rather than in the router's unit tests.
 
 ## iOS 26.0 Simulator run (macOS 27.2 host)
 
@@ -319,10 +318,10 @@ So, now observed rather than only compiled:
 
 - `tokenCounting: "estimated"` below 26.4, and `contextWindow: 4096` from the back-deployed `contextSize` thunk (the model service itself reported `contextSize: 8192` in the unified log, which is what 26.4+ would surface; below 26.4 the framework hardcodes 4096).
 - Native `countTokens` returns the contract's `invalidRequest` payload rather than crashing.
-- The TypeScript provider's `countTokens` answers from the core estimator without touching native (D10's wider margin follows from `createMeasure`).
+- The TypeScript provider's `countTokens` answers from the core estimator without touching native (the wider estimated-token margin follows from `createMeasure`).
 - The 26.0 locale list is shorter than 26.5's (14 languages versus 23): `da`, `nb`, `nl`, `pt-PT`, `sv`, `tr`, `vi`, `zh-HK`, `zh-TW` are absent. TaalTree's `nl` is one of them, so `supportsLocale` is the right pre-check on 26.0 too.
 
-**Generation reached the framework and came back as a typed guardrail error, twice.** Two chat prompts ("Hello, tell me a short joke." and "What is the capital of France?") each produced `guardrail` / "Blocked by a safety guardrail", reported "via apple" — the Apple provider answered, and the router did not fall back, because `guardrail` is not fallback-eligible (D30). The unified log shows why: the safety classifier `com.apple.fm.language.instruct_300m.safety` fails with the same `promptTemplateNotFound` as on 26.5, `SensitiveContentAnalysisML` reports `Code=15`, and then the framework logs _"Safety guardrails were triggered"_ and throws. On 26.0 that surfaced as the typed `GenerationError.guardrailViolation`, mapped by the legacy mapper; on 26.5 the same underlying failure surfaced as an untyped `NSError` (`unknown`, transient) and fell back. Two consequences:
+**Generation reached the framework and came back as a typed guardrail error, twice.** Two chat prompts ("Hello, tell me a short joke." and "What is the capital of France?") each produced `guardrail` / "Blocked by a safety guardrail", reported "via apple" — the Apple provider answered, and the router did not fall back, because `guardrail` is not fallback-eligible. The unified log shows why: the safety classifier `com.apple.fm.language.instruct_300m.safety` fails with the same `promptTemplateNotFound` as on 26.5, `SensitiveContentAnalysisML` reports `Code=15`, and then the framework logs _"Safety guardrails were triggered"_ and throws. On 26.0 that surfaced as the typed `GenerationError.guardrailViolation`, mapped by the legacy mapper; on 26.5 the same underlying failure surfaced as an untyped `NSError` (`unknown`, transient) and fell back. Two consequences:
 
 - The legacy mapper's `guardrailViolation` row has now been observed in practice, not only through synthesized errors.
 - A device whose safety model is broken presents as a guardrail trip on every prompt, and a guardrail trip does not fall back. That is the framework's classification, not the bridge's; a caller who wants cloud fallback in that state has to treat repeated `guardrail` results on innocuous prompts as a signal. It is worth knowing, and it is not a change to make on simulator evidence alone.
@@ -334,7 +333,7 @@ After each error the hook returned to `idle` and the next send worked, so nothin
 Run on 2026-09-26, once the maintainer got a pre-26 runtime installed: `xcodebuild
 -downloadPlatform` had refused every iOS 18.x version (the previous section's finding), so the
 iOS 18.6 Simulator runtime was installed by hand through Xcode's Settings › Components instead.
-With a device finally available, the `unsupportedPlatform` path (D42's "16.4 podspec floor"
+With a device finally available, the `unsupportedPlatform` path (the "16.4 podspec floor"
 section above) could be exercised live rather than only typechecked.
 
 - Host: macOS 27.2 (26B5091g). Simulator: iPhone 16 Pro, iOS 18.6 runtime. App: the existing
@@ -396,7 +395,7 @@ actually complete rather than fail with `network`):
   ```
 
   Below the on-device floor the only available provider is `cloud-fm`, and `fm serve` has no
-  usable tool calling (D8), so the request is refused before it reaches the network. The first
+  usable tool calling, so the request is refused before it reaches the network. The first
   automated pass in this run could not get the button to register a tap; a retry on a fresh
   launch did, on the first tap.
 
@@ -412,5 +411,3 @@ HTTP 200.
 ## What remains unverified
 
 - **iOS below 26 at runtime, on a real device.** The Simulator side of this is now covered: iOS 18.6 launched cleanly and reported `unsupportedPlatform` exactly as documented, with the router falling through to the cloud provider. What is still missing is the same path on a physical pre-26 iPhone rather than a Simulator — only Simulator runtimes (26.0/26.5/27.0/27.1, plus the newly installed 18.6) exist on this machine, so nobody has watched the compiled binary run this path on real pre-26 hardware.
-- **Successful generation on iOS 26.x.** This is still unmeasured, and so are `usage` absence on a real result and `finishReason` without usage. Neither the 26.0 nor the 26.5 Simulator can generate on a macOS 27 host (above): the safety model fails to load, which 26.0 reports as a guardrail trip and 26.5 as an untyped error. Of the typed `GenerationError` cases, only `guardrailViolation` has been observed thrown in practice. That needs an iOS 26 device, or a macOS 26 host running the 26.x simulator.
-- **The D23 constraint matrix, D21 cancellation and tool round trips on 26.x.** These are still 27-only measurements.

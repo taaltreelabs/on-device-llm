@@ -6,7 +6,7 @@
  * 1. **Prefer the provider's own counter, fall back to the estimator.** Only
  *    the provider knows its per-message framing, and Apple can count exactly
  *    (`tokenCount(for:)`) from iOS 26.4 — one step above the iOS 26.0
- *    on-device floor (DECISIONS.md D42), so an on-floor device is not guaranteed an
+ *    on-device floor, so an on-floor device is not guaranteed an
  *    exact counter. A cloud endpoint cannot count before the request, so
  *    `estimateTokens` is a permanent part of the path, not a stopgap.
  * 2. **Carry *how* the number was obtained.** The safety margin is larger for
@@ -14,7 +14,7 @@
  *    the number they are shown is a measurement or a guess. A bare `number`
  *    loses that, so every measurement is a {@link TokenMeasurement}.
  *
- * The failure mode this module exists to absorb: DECISIONS.md D9 records
+ * The failure mode this module exists to absorb: testing has shown
  * `countTokens` throwing `ModelManagerError 1013` on a live, "available"
  * device. A trimming pass must not die because the counter had a bad day — it
  * falls back to the estimate, says so in `source`, and the budget widens its
@@ -48,7 +48,7 @@ export type TokenMeasurementSource =
   | 'providerEstimated'
   /** `estimateTokens` — the provider has no counter (`tokenCounting: 'none'`). */
   | 'estimator'
-  /** `estimateTokens` — the provider had a counter and it threw or returned nonsense (DECISIONS.md D9). */
+  /** `estimateTokens` — the provider had a counter and it threw or returned nonsense. */
   | 'estimatorAfterCounterFailure';
 
 /** A token count, plus the provenance that tells you how much to trust it. */
@@ -105,7 +105,7 @@ export interface CreateMeasureOptions {
    * of this {@link Measure}. Defaults to `true`.
    *
    * A single `fitContext` pass measures once per dropped turn; a wedged model
-   * (D9) would otherwise fail the same way on every one of those calls, each
+   * would otherwise fail the same way on every one of those calls, each
    * of them possibly a slow bridge round-trip. Latching also keeps a single
    * pass *self-consistent*: every number in one trimming decision then comes
    * from the same measuring device. Set `false` if your counter's failures
