@@ -3,8 +3,7 @@
  *
  * The taxonomy (`errors.ts`) exists so exactly this decision can be made on a
  * code rather than on a string match, and the defaults below are the plan's
- * (docs/plan.md §4/§5) plus two calls this package had to make itself
- * (DECISIONS.md D30).
+ * (docs/plan.md §4/§5) plus two calls this package had to make itself.
  */
 
 import { isLLMError, type LLMError } from '../errors';
@@ -19,7 +18,7 @@ import { isLLMError, type LLMError } from '../errors';
  * does not compile. `cancelled` means the caller asked to stop, and continuing
  * to spend money and battery on a second provider is the one thing they
  * definitely did not want; `invalidRequest` means the request is wrong and
- * will be just as wrong at the next provider (DECISIONS.md D6: an unsupported
+ * will be just as wrong at the next provider (an unsupported
  * schema construct, a conversation that does not end with a user message).
  */
 export interface FallbackTriggers {
@@ -28,8 +27,8 @@ export interface FallbackTriggers {
   /**
    * The request did not fit the context window. Default `true` — this is the
    * canonical reason to move a long conversation from a 4K on-device window to
-   * a cloud model (docs/plan.md §4), and DECISIONS.md D15 makes the context
-   * manager's own overflow arrive by the same route.
+   * a cloud model (docs/plan.md §4), and the context
+   * manager throws the same error code for its own overflow.
    */
   readonly contextOverflow?: boolean;
   /** Transport failure. Default `true`: always transient, and the on-device provider does not need the network. */
@@ -55,7 +54,7 @@ export interface FallbackTriggers {
    * The model does not support the request's language. Default `true`.
    *
    * This is a capability gap, not a failure: Apple enumerates 24 locales
-   * (DECISIONS.md D7) and a cloud model usually handles the rest, so falling
+   * and a cloud model usually handles the rest, so falling
    * back is the behaviour a Polish-speaking user wants and the alternative is
    * an error for something another configured provider can do. It is
    * switchable because it does mean the prompt leaves the device.
@@ -64,10 +63,10 @@ export interface FallbackTriggers {
   /**
    * `unknown` carrying `details.transient === true`. Default `true`.
    *
-   * DECISIONS.md D9's lane: availability said yes and the native layer then
+   * Transient system failure: availability said yes and the native layer then
    * threw `ModelManagerError 1013` / `SensitiveContentAnalysisML error 15`.
    * The provider is telling us "this may work elsewhere or later", and that is
-   * exactly the signal a router exists to act on (D25 sets it for a tool-call
+   * exactly the signal a router exists to act on (the tool bridge sets it for a tool-call
    * timeout too).
    */
   readonly unknownTransient?: boolean;
@@ -75,7 +74,7 @@ export interface FallbackTriggers {
    * `unknown` with `transient === false` or `transient` absent. Default
    * **`false`**.
    *
-   * `false` is a provider saying "this will fail again" (D25: a tool handler
+   * `false` is a provider saying "this will fail again" (a tool handler
    * that threw — app code, deterministic). `undefined` is a provider that does
    * not know, and treating "don't know" as retryable makes every mystery
    * failure cost two generations and two bills. Opt in if your providers are

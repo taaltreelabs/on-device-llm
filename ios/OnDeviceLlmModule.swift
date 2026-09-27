@@ -6,7 +6,7 @@
 //  calls lives in `ios/Core`, is Expo-free, and is compiled unchanged by the
 //  macOS verification harness against the real on-device model.
 //
-//  DECISIONS.md D16 records why this uses the classic definition DSL rather
+//  This uses the classic definition DSL rather
 //  than the macro-based Modules API 2.0.
 //
 //  Shape of the bridge:
@@ -34,14 +34,14 @@
 //
 //  Failures are *returned*, not thrown. Expo's exception channel carries a
 //  code and a message; our taxonomy also carries `contextSize`/`tokenCount`,
-//  `resetDate`, `locale` and the native domain/code (DECISIONS.md D9), and
+//  `resetDate`, `locale` and the native domain/code, and
 //  losing those to fit the exception shape would defeat the whole point of
 //  mapping errors natively. One result shape for both paths also means the
 //  TypeScript side has exactly one error decoder.
 //
 //  Platform floor: iOS 16.4, ExpoModulesCore's own (ios/OnDeviceLlm.podspec),
 //  so that autolinking does not silently drop this module from an app that
-//  still supports iOS older than 26 (DECISIONS.md D22). FoundationModels is
+//  still supports iOS older than 26. FoundationModels is
 //  iOS 26.0 and weak-linked. This class is the one declaration that cannot be
 //  `@available(iOS 26.0, *)`, because Expo instantiates it on every OS, so
 //  every `AsyncFunction` body starts with `guard #available(iOS 26.0, *)` and
@@ -67,7 +67,7 @@ private let streamEventName = "onStreamEvent"
 /// does not exist. Same shapes as the real answers, so the TypeScript side
 /// needs no second decoder: `src/apple/errors.ts` already accepts
 /// `unsupportedPlatform` as an unavailable reason, and the router falls
-/// through past it to the next provider exactly as it does on Android (D38).
+/// through past it to the next provider exactly as it does on Android.
 private enum UnsupportedPlatform {
   static let detail =
     "Apple FoundationModels needs iOS 26 or later; this device runs an older iOS."
@@ -79,7 +79,7 @@ private enum UnsupportedPlatform {
   }
 
   /// Every key `ModelInfo.capabilities` reports, with inert values. A
-  /// `contextWindow` of `0` is the documented "unknown" (D11), and nothing
+  /// `contextWindow` of `0` is the documented "unknown", and nothing
   /// here claims a feature the device cannot run.
   static var capabilities: [String: Any] {
     [
@@ -196,8 +196,7 @@ public class OnDeviceLlmModule: Module {
       // registries would give anyway; the guard keeps every entry point alike.
       guard #available(iOS 26.0, *) else { return false }
       // Both registries: cancelling the generation task alone would leave a
-      // `BridgedTool.call` suspended on a continuation nobody will resume
-      // (DECISIONS.md D25).
+      // `BridgedTool.call` suspended on a continuation nobody will resume.
       await self.toolRegistry.cancelRequest(requestId)
       return await self.registry.cancel(requestId)
     }
@@ -336,7 +335,7 @@ public class OnDeviceLlmModule: Module {
     await registry.register(requestId) { [toolRegistry] in
       task.cancel()
       // A tool call in flight is suspended on a continuation, and cancelling
-      // the task does not resume it (DECISIONS.md D25).
+      // the task does not resume it.
       Task { await toolRegistry.cancelRequest(requestId) }
     }
 

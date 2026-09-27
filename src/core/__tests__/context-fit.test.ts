@@ -57,7 +57,7 @@ describe('fitContext', () => {
     expect(result.budget).toMatchObject({ kind: 'bounded' });
   });
 
-  describe('unknown contextWindow (DECISIONS.md D9)', () => {
+  describe('unknown contextWindow', () => {
     const provider = () => new MockProvider({ capabilities: { contextWindow: UNKNOWN } });
 
     it('passes the conversation through untrimmed, with a warning, by default', async () => {

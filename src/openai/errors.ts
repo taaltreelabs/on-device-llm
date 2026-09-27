@@ -3,8 +3,7 @@
  *
  * Both failure shapes a Chat Completions-compatible endpoint can hand us —
  * a non-2xx HTTP response, and an in-band `event: error` frame on an
- * otherwise-200 SSE stream (observed live against `fm serve`,
- * DECISIONS.md D8) — funnel through {@link buildApiError} so the mapping
+ * otherwise-200 SSE stream (observed live against `fm serve`) — funnel through {@link buildApiError} so the mapping
  * table lives in exactly one place.
  */
 

@@ -57,7 +57,7 @@ describe('capabilities', () => {
     });
   });
 
-  it("defaults tokenCounting to 'estimated' when the wire omits it (older native build, D10)", async () => {
+  it("defaults tokenCounting to 'estimated' when the wire omits it (older native build)", async () => {
     const native = new FakeNativeModule();
     // No `tokenCounting`/`usageReporting` at all — a native module built
     // before this field existed. Missing must read as the *safe* direction,
@@ -123,7 +123,7 @@ describe('countTokens', () => {
 
   it(
     'estimates instead of calling native when the model reports tokenCounting: ' +
-      "'estimated' (iOS 26.0-26.3, no exact tokenCount(for:) at all — D42/D10)",
+      "'estimated' (iOS 26.0-26.3, no exact tokenCount(for:) at all)",
     async () => {
       const native = new FakeNativeModule();
       native.capabilitiesResult = { ...native.capabilitiesResult, tokenCounting: 'estimated' };
@@ -179,7 +179,7 @@ describe('countTokens', () => {
     expect(native.calls.countTokens).toHaveLength(0);
   });
 
-  it('throws a typed LLMError when the counter fails (D9: ModelManagerError 1013)', async () => {
+  it('throws a typed LLMError when the counter fails (ModelManagerError 1013)', async () => {
     const native = new FakeNativeModule();
     native.countTokensResult = {
       ok: false,
@@ -208,7 +208,7 @@ describe('countTokens', () => {
   });
 
   it('lets the context manager fall back to estimates and widen its margin', async () => {
-    // The D9/D10 integration: a provider that claims `exact` and then throws is
+    // Token-counting fallback: a provider that claims `exact` and then throws is
     // measuring by estimate, and must be treated as such.
     const native = new FakeNativeModule();
     native.countTokensResult = {
@@ -230,7 +230,7 @@ describe('countTokens', () => {
 
   it(
     'fitContext widens the safety margin to 256 for a device reporting ' +
-      "tokenCounting: 'estimated' (iOS 26.0-26.3, D42/D10)",
+      "tokenCounting: 'estimated' (iOS 26.0-26.3)",
     async () => {
       const native = new FakeNativeModule();
       native.capabilitiesResult = {

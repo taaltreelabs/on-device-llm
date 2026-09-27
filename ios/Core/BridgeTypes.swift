@@ -9,7 +9,6 @@
 //  which runs it against the real on-device model. `OnDeviceLlmModule.swift`
 //  is the only file that knows about Expo, and it is thin glue by design.
 //
-//  See DECISIONS.md D16 (Modules API choice) and D17 (transcript/prompt split).
 //
 
 import Foundation
@@ -49,7 +48,7 @@ struct BridgeGenerationOptions: Sendable, Equatable {
 ///
 /// `parametersJson` is a JSON Schema document already normalised by
 /// `src/core/schema.ts` and encoded by `src/apple/schema.ts` into the exact
-/// dialect `GenerationSchema`'s `Codable` decode accepts (DECISIONS.md D23).
+/// dialect `GenerationSchema`'s `Codable` decode accepts.
 /// Swift never inspects it beyond decoding it.
 struct BridgeToolDefinition: Sendable, Equatable {
   let name: String
@@ -57,8 +56,7 @@ struct BridgeToolDefinition: Sendable, Equatable {
   let parametersJson: String
 }
 
-/// How long a tool call waits for JavaScript before the request fails
-/// (DECISIONS.md D25). Thirty seconds: long enough for a network round trip in
+/// How long a tool call waits for JavaScript before the request fails. Thirty seconds: long enough for a network round trip in
 /// an app's handler, short enough that a forgotten `resolve` does not pin the
 /// neural engine for the life of the process.
 let defaultToolCallTimeoutMs = 30_000
@@ -226,8 +224,7 @@ struct BridgeErrorPayload: Sendable, Equatable {
   // `unknown`
   var transient: Bool?
 
-  // Diagnostics, attached to every payload we can attach them to. DECISIONS.md
-  // D9: untyped `NSError`s do escape this framework, and losing the domain and
+  // Diagnostics, attached to every payload we can attach them to. Untyped `NSError`s do escape this framework, and losing the domain and
   // code is what makes them unreportable.
   var nativeDomain: String?
   var nativeCode: Int?
@@ -276,8 +273,7 @@ struct BridgeError: Error, Sendable, Equatable {
 
   /// A tool call that JavaScript never answered within the request's budget.
   ///
-  /// `unknown` + `transient: true` rather than `invalidRequest` (DECISIONS.md
-  /// D25): the request was well-formed, and the thing that failed — an app
+  /// `unknown` + `transient: true` rather than `invalidRequest`: the request was well-formed, and the thing that failed — an app
   /// handler waiting on a network call, a JS thread wedged behind a render —
   /// is exactly the kind of failure that may succeed on a retry. `transient`
   /// is the hint the Phase 4 router branches on.
@@ -314,14 +310,13 @@ struct BridgeError: Error, Sendable, Equatable {
 /// What `GenerationEngine.stream` hands back, one per native event sent to JS.
 enum BridgeStreamEvent: Sendable, Equatable {
   /// Text produced since the previous delta. `reset` marks the snapshot-diff
-  /// fallback described in DECISIONS.md D18.
+  /// fallback implemented by `SnapshotDiffer`.
   case delta(String, reset: Bool)
   /// A partially generated structured value, as JSON text. Whole-value
   /// snapshots rather than deltas, because an object firms up by having fields
   /// filled in — see `ObjectSnapshotEvent` in `src/core/stream.ts`.
   case objectSnapshot(String)
-  /// The model wants a tool run. JavaScript answers with `resolveToolCall`
-  /// (DECISIONS.md D24); until it does, the Swift `Tool.call` is suspended on a
+  /// The model wants a tool run. JavaScript answers with `resolveToolCall`; until it does, the Swift `Tool.call` is suspended on a
   /// continuation registered under `callId`.
   case toolCall(callId: String, toolName: String, argumentsJson: String)
   case finish(BridgeResult)

@@ -10,7 +10,7 @@
  *    discriminated union, and `startStream` reports every outcome through
  *    events. Expo's exception channel carries a code and a message; our
  *    taxonomy also carries `contextSize`/`tokenCount`, `resetDate`, `locale`
- *    and the native domain/code (DECISIONS.md D9), and none of that survives
+ *    and the native domain/code, and none of that survives
  *    an exception. One shape for both paths also means one decoder.
  * 2. **Every streaming payload carries its `requestId`.** All streams share
  *    the single `onStreamEvent` event, so the bridge demultiplexes on that id
@@ -30,7 +30,7 @@ export interface NativeCapabilities {
   /**
    * `SystemLanguageModel.contextSize`, already guarded: the native side sends
    * `0` rather than a negative or nonsense value, and `0` means "unknown"
-   * (DECISIONS.md D9 — it really has been observed on a wedged install).
+   * (it really has been observed on a wedged install).
    */
   readonly contextWindow: number;
   /** BCP-47 tags, minimal form (`'nl'`, `'en-GB'`, `'es-419'`). */
@@ -48,7 +48,7 @@ export interface NativeCapabilities {
   /**
    * Whether `countTokens(messages)` can answer with the model's own
    * tokenizer. `SystemLanguageModel.tokenCount(for:)` arrived in iOS 26.4;
-   * the on-device floor is iOS 26.0 (DECISIONS.md D42), so a device on
+   * the on-device floor is iOS 26.0, so a device on
    * 26.0–26.3 has no exact API at all and `countTokens` on it resolves
    * `{ ok: false, error: { code: 'invalidRequest', … } }` rather than a
    * number. The TypeScript provider reads this field to decide whether it
@@ -57,7 +57,7 @@ export interface NativeCapabilities {
    * Optional on the wire so a native module built before this field existed
    * (or a message a future OS version doesn't bother setting) still
    * round-trips. **Missing defaults to `'estimated'`, not `'exact'`**: an
-   * unreported value is an unknown quantity, and DECISIONS.md D10 makes
+   * unreported value is an unknown quantity, and token-budget measurement makes
    * `'estimated'` the safe direction — it earns the wider 256-token safety
    * margin instead of the narrow 64-token one an unearned `'exact'` would
    * get.
@@ -126,9 +126,9 @@ export interface NativeErrorPayload {
   readonly locale?: string;
   /** `rateLimited` only — milliseconds since the epoch. */
   readonly resetDate?: number;
-  /** `unknown` only — the D9 router hint. */
+  /** `unknown` only — the transient-failure router hint. */
   readonly transient?: boolean;
-  /** Diagnostics for the untyped-`NSError` branch (D9). */
+  /** Diagnostics for the untyped-`NSError` branch. */
   readonly nativeDomain?: string;
   readonly nativeCode?: number;
   readonly nativeDetail?: string;
@@ -168,7 +168,7 @@ export type NativeStreamEvent =
       readonly requestId: string;
       readonly type: 'delta';
       readonly delta: string;
-      /** The DECISIONS.md D18 snapshot-diff fallback fired for this delta. */
+      /** The snapshot-diff fallback fired for this delta. */
       readonly reset: boolean;
     }
   | {
@@ -198,7 +198,7 @@ export interface NativeSubscription {
 export interface AppleNativeModule {
   availability(): Promise<NativeAvailability>;
   capabilities(): Promise<NativeCapabilities>;
-  /** `SystemLanguageModel.supportsLocale`, the exact check behind the D7 pre-check. */
+  /** `SystemLanguageModel.supportsLocale`, the exact check behind the locale pre-check. */
   supportsLocale(tag: string): Promise<boolean>;
   generate(
     requestId: string,

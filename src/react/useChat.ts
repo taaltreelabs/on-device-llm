@@ -5,7 +5,7 @@
  * Isolation: `react` only (see `useAvailability.ts`'s module doc for why
  * `react-native` cannot appear here).
  *
- * ### Design decisions worth knowing before reading the implementation
+ * ### Implementation notes
  *
  * - **No `schema` option.** `useChat` accumulates a text transcript
  *   (`messages`/`streamingText`); a schema request answers with `object`

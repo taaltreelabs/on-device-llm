@@ -16,7 +16,7 @@
  *   1 — fm serve was reachable and healthy, but one or more checks failed.
  *   2 — fm serve is unreachable or unhealthy; nothing was tested. This is
  *       the expected outcome whenever fm serve is not running locally, or
- *       (DECISIONS.md D9) when the on-device stack is wedged and every
+ *       when the on-device stack is wedged and every
  *       generation 500s despite health passing.
  */
 

@@ -47,7 +47,7 @@ func runBaselineChecks(_ harness: Harness) async {
     let concatenated = log.deltas.joined()
     try expectEqual(concatenated, finish.text, "concatenated deltas vs finish.text")
     let resets = log.all.filter { if case .delta(_, true) = $0 { return true } else { return false } }
-    try expect(resets.isEmpty, "\(resets.count) snapshot resets (D18 fallback fired)")
+    try expect(resets.isEmpty, "\(resets.count) snapshot resets (snapshot fallback fired)")
   }
 
   await harness.check("cancelling a stream reports cancelled, not finish") {

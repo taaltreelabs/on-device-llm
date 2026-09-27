@@ -179,14 +179,14 @@ describe('countTokens', () => {
         }),
       ],
     });
-    // `createMeasure` catches exactly this and widens the safety margin (D10);
+    // `createMeasure` catches exactly this and widens the safety margin;
     // a silent estimate would keep the narrow margin under an exact-looking
     // number.
     const error = await router.countTokens?.(request.messages).catch((thrown: unknown) => thrown);
     expect(isLLMError(error, 'unavailable')).toBe(true);
   });
 
-  it('lets the provider’s own counter failure surface (D27)', async () => {
+  it('lets the provider’s own counter failure surface', async () => {
     const router = createRouter({
       providers: [
         new MockProvider({
@@ -241,7 +241,7 @@ describe('prewarm', () => {
     await expect(router.prewarm?.()).resolves.toBe(false);
   });
 
-  it('swallows a provider’s prewarm failure — a hint that failed is still a hint (D26)', async () => {
+  it('swallows a provider’s prewarm failure — a hint that failed is still a hint', async () => {
     const router = createRouter({
       providers: [
         stubProvider({

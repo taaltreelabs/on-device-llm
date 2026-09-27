@@ -50,7 +50,7 @@ export async function answer(question: string): Promise<string> {
 }
 ```
 
-The handler travels with the definition for a reason (D24). The alternatives were
+The handler travels with the definition for a reason. The alternatives were
 configuring handlers on the provider — wrong, because tools belong to a conversation, not
 to a model, and a router picks the provider per request — or passing a parallel handler
 map, which is two structures to keep in sync whose failure mode (a definition with no

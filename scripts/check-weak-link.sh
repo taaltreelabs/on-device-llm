@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Asserts that FoundationModels.framework is weak-linked in a built app's
-# executable(s). This is the regression test for DECISIONS.md D42: the
+# executable(s). This is a compatibility regression test: the
 # podspec floor is iOS 16.4 (below FoundationModels' iOS 26.0), and the app
 # is safe to launch below 26 only if every reference into the framework is
 # LC_LOAD_WEAK_DYLIB rather than LC_LOAD_DYLIB. A strong reference would

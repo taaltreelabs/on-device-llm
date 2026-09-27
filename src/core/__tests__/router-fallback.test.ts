@@ -104,7 +104,7 @@ describe('fallback triggers', () => {
 
   it('leaves a non-transient `unknown` alone while still failing over a transient one', async () => {
     // `transient: undefined` is a provider that does not know, and "don't
-    // know" is not "retryable" (DECISIONS.md D9/D30).
+    // know" is not "retryable".
     const silent = createRouter({
       providers: [failing('device', { code: 'unknown' }), answering('cloud')],
     });

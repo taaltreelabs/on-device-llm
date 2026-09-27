@@ -50,7 +50,7 @@ export type StrategySelection =
 
 /**
  * What to do when the provider cannot report its context window
- * (`contextWindow: UNKNOWN` — DECISIONS.md D9).
+ * (`contextWindow: UNKNOWN`).
  */
 export type UnknownContextWindowPolicy =
   /**

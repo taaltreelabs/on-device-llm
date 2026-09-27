@@ -13,7 +13,7 @@ import FoundationModels
 /// Everything one request needs to build a session and call it.
 @available(iOS 26.0, macOS 26.0, *)
 struct PreparedRequest: Sendable {
-  /// History. Does **not** contain the message being answered — see D17 below.
+  /// History. Does **not** contain the message being answered — see the transcript/prompt split below.
   let transcript: Transcript
   /// The final user message, passed to `respond`/`streamResponse`.
   let prompt: String
@@ -22,13 +22,12 @@ struct PreparedRequest: Sendable {
 
 @available(iOS 26.0, macOS 26.0, *)
 enum TranscriptBuilder {
-  /// Marker prefix the context manager puts on rolling summaries
-  /// (DECISIONS.md D13). Only used to keep the instructions readable.
+  /// Marker prefix the context manager puts on rolling summaries. Only used to keep the instructions readable.
   static let summaryMarker = "[summary of earlier conversation]"
 
   /// Build the session inputs for one request.
   ///
-  /// **DECISIONS.md D17 — where the last user message goes.**
+  /// **Where the last user message goes.**
   /// `LanguageModelSession(model:tools:transcript:)` seeds a session with
   /// *completed* turns; `respond(to:)` appends a new `.prompt` entry and
   /// generates a `.response` for it. So the two are not interchangeable:
@@ -52,7 +51,7 @@ enum TranscriptBuilder {
   /// and there is exactly one of it (docs/research/sdk-surface.md §6). A JS
   /// conversation can carry system messages anywhere — the Phase 2 rolling
   /// summary is a non-pinned `system` message sitting in front of the retained
-  /// turns (D13). All of them are therefore concatenated, in their original
+  /// turns. All of them are therefore concatenated, in their original
   /// order, into that single instructions entry. Relative order among system
   /// messages is preserved; their position *between* turns is not, because the
   /// transcript has no way to express it. In practice the context manager

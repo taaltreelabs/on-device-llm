@@ -255,7 +255,7 @@ func modelIsUsable() -> Bool {
   return false
 }
 
-/// One tiny generation, to tell "available" from "actually works" (D9).
+/// One tiny generation, to tell "available" from "actually works".
 ///
 /// Returns a description of the failure, or `nil` when the model answered. The
 /// deadline is generous — a first generation after a reboot can be slow — but

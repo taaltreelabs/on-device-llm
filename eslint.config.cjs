@@ -2,7 +2,7 @@ const { defineConfig } = require('eslint/config');
 const universe = require('eslint-config-universe/flat/native');
 const universeWeb = require('eslint-config-universe/flat/web');
 
-// The isolation rule (docs/plan.md §2, DECISIONS.md D1-D9): `src/core` and
+// The isolation rule (docs/plan.md §2): `src/core` and
 // `src/openai` must be importable from plain Node with nothing
 // React/React-Native/Expo/native anywhere in their import graph. This
 // override forbids the forbidden specifiers via both ES import syntax
@@ -44,7 +44,7 @@ const isolationOverride = {
           {
             group: isolationForbiddenPatterns,
             message:
-              'src/core and src/openai must stay importable from plain Node with no React/React Native/Expo/native module in the graph (see docs/plan.md §2, DECISIONS.md).',
+              'src/core and src/openai must stay importable from plain Node with no React/React Native/Expo/native module in the graph (see docs/plan.md §2).',
           },
         ],
       },

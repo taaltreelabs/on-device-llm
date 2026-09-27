@@ -60,7 +60,7 @@ export const DEFAULT_ROUTE_CACHE_TTL_MS = 5_000;
  * **Staleness semantics**, which are the whole reason this is safe:
  *
  * - A stale **`available: true`** costs nothing that a fresh one would not.
- *   DECISIONS.md D9 is explicit that `available` never meant "the next request
+ *   `available` never meant "the next request
  *   will succeed": the request can fail anyway, and the failure is exactly
  *   what the fallback chain is built to absorb. Freshness buys no guarantee
  *   here, so it is not worth a bridge hop.

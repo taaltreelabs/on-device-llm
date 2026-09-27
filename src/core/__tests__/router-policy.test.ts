@@ -182,7 +182,7 @@ describe('the context-window check', () => {
     });
   });
 
-  it('does NOT skip a provider whose window is UNKNOWN (DECISIONS.md D11)', async () => {
+  it('does NOT skip a provider whose window is UNKNOWN', async () => {
     const router = createRouter({
       providers: [
         new MockProvider({
@@ -216,7 +216,7 @@ describe('the context-window check', () => {
     expect(unbounded.calls.filter((call) => call.method === 'countTokens')).toHaveLength(0);
   });
 
-  it('falls back to the estimate when the provider’s counter throws (D9)', async () => {
+  it('falls back to the estimate when the provider’s counter throws', async () => {
     const device = new MockProvider({
       id: 'device',
       capabilities: { contextWindow: 4096 },

@@ -11,7 +11,7 @@
  *
  * Skipped cleanly when `fm serve` is not reachable, following the same
  * two-probe pattern as `src/openai/__tests__/fm-serve.integration.test.ts`
- * (DECISIONS.md D8, D9: a server can accept connections while every real
+ * (a server can accept connections while every real
  * generation fails).
  */
 import { describe, expect, it } from 'vitest';
@@ -61,7 +61,7 @@ if (!probe.ok) {
   console.warn(
     `[fm-serve-context.integration.test] Skipping suite: ${probe.reason}\n` +
       '  This is expected when fm serve is not running, or when the on-device stack is' +
-      ' wedged (see DECISIONS.md D9); it is not a bug in this package.'
+      ' wedged; it is not a bug in this package.'
   );
 }
 

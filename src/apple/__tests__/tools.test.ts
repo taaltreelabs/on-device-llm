@@ -1,5 +1,5 @@
 /**
- * The JavaScript half of the tool protocol (DECISIONS.md D24), over the fake
+ * The JavaScript half of the tool protocol, over the fake
  * native module.
  *
  * The native half — continuations, the timeout, cancellation cleanup — is

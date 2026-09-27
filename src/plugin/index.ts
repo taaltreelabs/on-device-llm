@@ -5,7 +5,7 @@
  *   { "expo": { "plugins": ["@taaltreelabs/on-device-llm"] } }
  *
  * It applies the iOS 27 scene life cycle patch during `prebuild` (see
- * `./scene-lifecycle.ts` and DECISIONS.md D41). Build-time only: it runs in
+ * `./scene-lifecycle.ts`). Build-time only: it runs in
  * Node under the Expo CLI and is never part of an app bundle, which is why it
  * is not a subpath export.
  */

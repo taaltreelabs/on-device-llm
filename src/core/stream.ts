@@ -1,7 +1,7 @@
 /**
  * Streaming events.
  *
- * DECISIONS.md D5: `StreamEvent` carries **deltas**, not cumulative
+ * `StreamEvent` carries **deltas**, not cumulative
  * snapshots. Deltas are the convention of Chat Completions, of UI code that
  * appends to a buffer, and of our `openai` provider. Apple's
  * `ResponseStream` yields cumulative `Snapshot` values
@@ -23,7 +23,7 @@ export interface TextDeltaEvent {
 /**
  * A partially populated structured-output value.
  *
- * Justification for existing alongside `textDelta` (D5 mandates deltas, and
+ * Justification for existing alongside `textDelta` (the stream contract mandates deltas, and
  * this event is explicitly a snapshot): text is append-only, so a delta is
  * well-defined, but a partially generated *object* changes by having fields
  * filled in — Apple's stream yields a partially populated

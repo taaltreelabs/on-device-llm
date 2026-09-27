@@ -2,7 +2,7 @@
  * `OpenAIProvider` — an `LLMProvider` for any Chat Completions-compatible
  * HTTP endpoint (docs/plan.md §5 Phase 1). Two intended targets: a
  * developer-supplied cloud fallback in production, and `fm serve` on
- * loopback during development (DECISIONS.md D8).
+ * loopback during development.
  */
 
 import {
@@ -168,7 +168,7 @@ export class OpenAIProvider implements LLMProvider {
 
     const contentType = response.headers.get('content-type') ?? '';
     if (contentType.includes('text/event-stream')) {
-      // D8 fm-serve quirk: it has been observed replying with an SSE
+      // fm-serve quirk: it has been observed replying with an SSE
       // envelope even for `stream: false` (and, during one wedged period,
       // 500ing on an explicit `stream: false`). Aggregate rather than
       // failing `response.json()` on the SSE syntax.
@@ -247,7 +247,7 @@ export class OpenAIProvider implements LLMProvider {
         const events = parser.push(decoder.decode(value, { stream: true }));
         for (const event of events) {
           if (event.event === 'error') {
-            // Observed live against fm serve (DECISIONS.md D8): an
+            // Observed live against fm serve: an
             // otherwise-200 SSE stream can carry an in-band error frame.
             throw this.errorFromSseEvent(event);
           }

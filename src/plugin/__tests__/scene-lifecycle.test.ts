@@ -1,12 +1,12 @@
 /**
- * The config plugin's source transforms (DECISIONS.md D41). Both fixtures are
+ * The config plugin's source transforms. Both fixtures are
  * committed, because `example/ios` is prebuild output and not in git:
  *
  * - `expo-57-AppDelegate.swift` — what a pristine `expo prebuild` of an Expo 57
  *   app generates;
  * - `expo-57-AppDelegate.scene.swift` — the same file migrated by hand to the
  *   scene life cycle, the version verified to launch on iOS 27 before the
- *   plugin existed (D40), with its `SceneDelegate` in a separate file.
+ *   plugin existed, with its `SceneDelegate` in a separate file.
  */
 
 import fs from 'fs';

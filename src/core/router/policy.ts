@@ -1,7 +1,7 @@
 /**
  * Routing policy: how the router picks the **first** provider to try.
  *
- * The shape is *data plus an escape hatch* (DECISIONS.md D28). The declarative
+ * The shape is *data plus an escape hatch*. The declarative
  * form covers what apps actually ask for — "prefer on-device, but send
  * reasoning work to the cloud", "never send a request needing tools to a
  * provider that has none" — and stays inspectable, serializable, and testable
@@ -81,7 +81,7 @@ export interface RouteCandidate {
    * Does the request fit this provider's context window?
    *
    * `'unknown'` when `capabilities().contextWindow` is `UNKNOWN`, which is
-   * **not** treated as a failure: per DECISIONS.md D11 every cloud endpoint is
+   * **not** treated as a failure: every cloud endpoint is
    * in that state, and a provider that cannot describe its window still
    * reports a real `contextOverflow` (with real numbers) if the request is
    * genuinely too big.
@@ -141,7 +141,7 @@ export interface RouteRequirements {
    * Require this BCP-47 tag to appear in `capabilities().locales`.
    *
    * Matched on the language subtag (`'nl-BE'` is satisfied by `'nl'`), and
-   * `UNKNOWN` locales never fail the check — DECISIONS.md D7: most cloud
+   * `UNKNOWN` locales never fail the check — most cloud
    * endpoints cannot enumerate what they speak, and refusing them all for not
    * answering a question they cannot answer is worse than trying.
    */
@@ -156,7 +156,7 @@ export interface RouteRequirements {
   /**
    * Skip providers that report `available: false`. Defaults to `true`.
    *
-   * Turning it off is meaningful, not perverse: DECISIONS.md D9 records
+   * Turning it off is meaningful, not perverse: testing has shown
    * availability being wrong in the *optimistic* direction, and an app that has
    * seen it wrong in the pessimistic direction can force the attempt and let
    * the `unavailable` fallback trigger sort it out.

@@ -8,7 +8,7 @@
  * buffering any partial event (or partial line) across chunk boundaries.
  *
  * Handles, per the SSE spec and observed `fm serve` behaviour
- * (DECISIONS.md D8, docs/research/prior-art.md §5):
+ * (docs/research/prior-art.md §5):
  * - events split across chunk boundaries, at any byte position, including
  *   mid-line;
  * - multiple events in a single chunk;

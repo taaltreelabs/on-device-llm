@@ -35,7 +35,7 @@ export function toUnavailableReason(value: string | undefined): UnavailableReaso
 
 /**
  * The `cause` attached to every bridged error: the native diagnostics, kept
- * verbatim so a failure stays reportable (DECISIONS.md D9 — we have seen
+ * verbatim so a failure stays reportable (we have seen
  * `com.apple.SensitiveContentAnalysisML error 15` arrive with no typed case
  * at all, and without domain/code there is nothing to file a radar about).
  *

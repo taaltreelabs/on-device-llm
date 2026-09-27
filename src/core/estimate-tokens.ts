@@ -5,7 +5,7 @@
  * (docs/plan.md §4: "ship a conservative heuristic estimator (characters
  * divided by roughly 3.5, configurable)"). Apple exposes exact counting from
  * iOS 26.4 (`SystemLanguageModel.tokenCount(for:)`, docs/research/sdk-surface.md
- * §1), but the on-device floor is iOS 26.0 (DECISIONS.md D42): a device on
+ * §1), but the on-device floor is iOS 26.0: a device on
  * 26.0–26.3 is on-floor with no exact counter at all, and even a 26.4+ device
  * has been observed throwing on a broken model state. Cloud providers cannot
  * count at all before the request. So the estimator is a permanent part of

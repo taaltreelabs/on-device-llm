@@ -1,7 +1,7 @@
 /**
  * Tool calling — the request-side types.
  *
- * The seam (DECISIONS.md D24): **a tool is a definition plus a handler, and
+ * The seam: **a tool is a definition plus a handler, and
  * both live on the request.** `GenerateRequest.tools` carries
  * `{ name, description, parameters, execute }`, where `execute` is the
  * function the provider calls when the model asks for that tool.

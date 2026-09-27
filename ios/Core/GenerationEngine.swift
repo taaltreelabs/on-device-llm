@@ -5,8 +5,7 @@
 //  `generate`, `stream`, `prewarm` and `countTokens` over FoundationModels —
 //  Phase 3 steps 2-7.
 //
-//  A fresh `LanguageModelSession` per request (docs/plan.md §2, DECISIONS.md
-//  D2). The provider interface is stateless and message-based; the context
+//  A fresh `LanguageModelSession` per request (docs/plan.md §2). The provider interface is stateless and message-based; the context
 //  manager and the router own the conversation. Rebuilding is simple and
 //  correct, and it makes the framework's "one request per session at a time"
 //  problem disappear rather than needing to be managed. iOS 27's mutable
@@ -36,7 +35,7 @@ enum GenerationEngine {
       // Tool calling needs an event channel to reach JavaScript mid-generation,
       // and `generate` has none — it is one promise. The TypeScript provider
       // therefore routes a request carrying tools through `stream` and
-      // collapses the events into a `GenerateResult` (DECISIONS.md D24). This
+      // collapses the events into a `GenerateResult`. This
       // is the backstop for a hand-rolled caller.
       throw BridgeError.invalidRequest(
         "Tool calling requires the streaming path; call startStream instead of generate.")
@@ -116,7 +115,7 @@ enum GenerationEngine {
   /// Exact token count for the request these messages would produce.
   ///
   /// Counts the *same* transcript and prompt the request would send
-  /// (DECISIONS.md D17's split), so the number lines up with what the model
+  /// (the transcript/prompt split), so the number lines up with what the model
   /// will actually see rather than with a serialisation of the message list.
   /// `tokenCount(for:)` lives on `SystemLanguageModel`, not on the session —
   /// so no session is built here at all.
@@ -129,7 +128,7 @@ enum GenerationEngine {
   /// on those versions, and the TypeScript side reads that and never calls
   /// this; the throw is the backstop for a hand-rolled caller.
   ///
-  /// Throws rather than guessing (D9: these overloads have been observed
+  /// Throws rather than guessing (these overloads have been observed
   /// throwing `ModelManagerError 1013` on a live, "available" machine). The
   /// context manager's `createMeasure` falls back to the estimator and widens
   /// its safety margin when that happens; a silent guess here would take that
@@ -241,7 +240,7 @@ enum GenerationEngine {
       // `cancelled`, not as a successful result.
       try Task.checkCancellation()
       // `differ.emitted` is the last snapshot: authoritative, and the value a
-      // consumer should trust over its own concatenation (D18).
+      // consumer should trust over its own concatenation.
       emit(
         .finish(
           BridgeResult(
@@ -300,7 +299,7 @@ enum GenerationEngine {
           emit(.objectSnapshot(json))
         }
       }
-      // D21 again: a cancelled `ResponseStream` ends rather than throwing.
+      // A cancelled `ResponseStream` ends rather than throwing.
       try Task.checkCancellation()
       emit(
         .finish(

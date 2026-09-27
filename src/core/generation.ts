@@ -1,7 +1,7 @@
 /**
  * Request and result shapes for a single generation.
  *
- * Deliberately Chat-Completions-shaped (docs/plan.md §2, DECISIONS.md D1):
+ * Deliberately Chat-Completions-shaped (docs/plan.md §2):
  * a flat request carrying the full message list, a flat result carrying text
  * and/or a parsed object. Everything optional is optional because at least
  * one real provider cannot supply it.
@@ -15,7 +15,7 @@ import type { ToolDefinition } from './tools';
  *
  * Typed loosely on purpose. `core` has zero runtime dependencies (no schema
  * library) and the *authoritative* validation happens where the constraint
- * actually lives: per DECISIONS.md D6 the Apple provider normalizes and
+ * actually lives: the Apple provider normalizes and
  * validates the developer's schema in TypeScript against the subset Apple's
  * `GenerationSchema` can decode (objects, arrays, strings, numbers,
  * booleans, enums, optional fields, nesting; `title`,
@@ -89,7 +89,7 @@ export type FinishReason =
  *
  * Absent means "not reported", never zero. Do not default missing fields to
  * `0` — `@react-native-ai/apple` hardcodes zeros here and the result is
- * indistinguishable from a real measurement (DECISIONS.md D1).
+ * indistinguishable from a real measurement.
  */
 export interface TokenUsage {
   /** Tokens consumed by the prompt (messages, instructions, schema, tools). */
@@ -165,7 +165,7 @@ export interface GenerateRequest {
    * metadata, not a generation parameter, and a request that has been routed
    * arrives at its provider with the tag still attached.
    *
-   * It lives here rather than on `RequestOptions` (DECISIONS.md D29) because it
+   * It lives here rather than on `RequestOptions` because it
    * describes the *ask*, not the call: it is plain serializable data that
    * belongs with the messages when a request is stored, replayed, or handed
    * down through the context manager and the hooks, whereas `RequestOptions`

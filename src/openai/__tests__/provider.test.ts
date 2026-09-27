@@ -107,7 +107,7 @@ describe('createOpenAIProvider: config and endpoint', () => {
     expect(caps.locales).toEqual(['en-US', 'fr-FR']);
   });
 
-  it('a non-positive configured contextWindow normalizes to UNKNOWN (D9 guard)', async () => {
+  it('a non-positive configured contextWindow normalizes to UNKNOWN', async () => {
     const provider = createOpenAIProvider({ baseUrl: BASE, model: 'm', contextWindow: 0 });
     expect((await provider.capabilities()).contextWindow).toBe(UNKNOWN);
   });
@@ -218,7 +218,7 @@ describe('generate(): non-streaming mapping', () => {
     });
   });
 
-  it('D8: aggregates an SSE response even though the request was stream:false', async () => {
+  it('aggregates an SSE response even though the request was stream:false', async () => {
     const { fetch, requests } = fakeFetch([
       {
         status: 200,
@@ -346,7 +346,7 @@ describe('stream(): incremental parsing and aggregation', () => {
     expect(text).toBe('only');
   });
 
-  it('D8: maps an in-band event: error frame to an LLMError and throws it out of the iterator', async () => {
+  it('maps an in-band event: error frame to an LLMError and throws it out of the iterator', async () => {
     const body =
       'event: error\ndata: ' +
       JSON.stringify({ error: { message: 'internal server error' } }) +

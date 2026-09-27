@@ -9,7 +9,7 @@
  *
  * 1. **Pick before failing, but expect to fail anyway.** Policy uses
  *    availability, capabilities and token counts to avoid doomed requests, and
- *    DECISIONS.md D9 says none of that is a guarantee, so the fallback chain is
+ *    none of that is a guarantee, so the fallback chain is
  *    the real mechanism and the policy is an optimisation over it.
  * 2. **One shot per provider.** A provider is tried at most once per request.
  *    Same-provider retry is an app concern: it needs backoff, jitter, and a
@@ -250,7 +250,7 @@ export function createRouter(config: RouterConfig): LLMProvider {
         return { tokens: Math.ceil(counted), tokenSource: 'provider' };
       }
     } catch {
-      // DECISIONS.md D9: a counter that throws is a bad day, not a verdict on
+      // A counter that throws is a bad day, not a verdict on
       // the request. Estimate and carry on — the estimate is pessimistic, so
       // the worst case is one unnecessary hop to the next provider.
     }
@@ -296,7 +296,7 @@ export function createRouter(config: RouterConfig): LLMProvider {
    * Synthesised only in this one case — when a provider *was* tried, its own
    * error is rethrown verbatim (see the chain runners), because a
    * `RouterExhaustedError` would add a class to a taxonomy whose whole point is
-   * that there is exactly one (DECISIONS.md D31).
+   * that there is exactly one.
    */
   function nothingToTry(order: readonly RouteEligibility[]): LLMError {
     const skipped = order.filter(
@@ -565,7 +565,7 @@ export function createRouter(config: RouterConfig): LLMProvider {
    * available provider can count it **throws** rather than estimating:
    * `createMeasure` catches exactly this and records
    * `estimatorAfterCounterFailure`, which widens the safety margin from 64 to
-   * 256 tokens (DECISIONS.md D10). A silent estimate here would keep the narrow
+   * 256 tokens. A silent estimate here would keep the narrow
    * margin under an exact-looking number — the documented way to overflow a
    * "measured" budget.
    */
@@ -588,7 +588,7 @@ export function createRouter(config: RouterConfig): LLMProvider {
   /**
    * Forwards to the preferred available provider that has `prewarm`, and
    * answers `false` when there is nothing to forward to. Never throws — a hint
-   * that failed is still only a hint (DECISIONS.md D26).
+   * that failed is still only a hint.
    */
   async function prewarm(messages?: readonly Message[]): Promise<boolean> {
     try {

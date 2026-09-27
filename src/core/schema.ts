@@ -18,7 +18,7 @@
  * supported set throws `invalidRequest` naming the keyword and its path.
  *
  * Zero dependencies, pure, and unit-testable in Node — no schema library, no
- * device (DECISIONS.md D23).
+ * device.
  */
 
 import { LLMError } from './errors';
@@ -314,8 +314,7 @@ function normalizeRef(ref: string, node: JsonSchema, context: Context): SchemaNo
   }
   if (context.visiting.has(name)) {
     // Not a limitation we could code around: a recursive schema has no finite
-    // expansion, and Apple's `fm serve` is on record hanging on one
-    // (DECISIONS.md D8).
+    // expansion, and Apple's `fm serve` is on record hanging on one.
     fail(
       context.path,
       `Recursive \`$ref\` to "${name}". A schema that refers to itself has no finite ` +

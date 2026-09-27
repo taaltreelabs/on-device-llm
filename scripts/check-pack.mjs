@@ -109,7 +109,7 @@ if (!fileSet.has('expo-module.config.json')) {
   fail('missing required file: expo-module.config.json');
 }
 
-// ---- present: the Expo config plugin (DECISIONS.md D41) ----------------
+// ---- present: the Expo config plugin ----------------
 
 // `app.plugin.js` is the file Expo resolves for `"plugins": [pkg]`; without it,
 // or without the compiled plugin it requires, prebuild fails in the app.

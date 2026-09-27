@@ -12,7 +12,7 @@
  *   adds at request time, and — when we are estimating — the estimator's own
  *   error. The default margin is **larger when the count is an estimate**.
  *
- * DECISIONS.md D9 governs the unknown case: `contextWindow` may be the
+ * In the unknown case, `contextWindow` may be the
  * `UNKNOWN` sentinel, and it must never be arithmetic'd. That is why
  * {@link ContextBudget} is a discriminated union rather than a number — there
  * is no value of `budget.tokens` that honestly represents "we do not know the
@@ -88,8 +88,7 @@ export interface BoundedContextBudget {
 /**
  * The provider could not report a context window, so there is no budget.
  *
- * This is an explicit, typed outcome rather than a number, per DECISIONS.md
- * D9. See `FitContextOptions.onUnknownContextWindow` for what callers can do
+ * This is an explicit, typed outcome rather than a number. See `FitContextOptions.onUnknownContextWindow` for what callers can do
  * about it; the default is to pass the conversation through untrimmed with a
  * warning, because trimming to an unknown limit is guessing, and refusing to
  * answer would break every cloud endpoint (none of which can report a window
@@ -213,7 +212,7 @@ export function computeContextBudget(input: ContextBudgetInput): ContextBudget {
     throw new LLMError(
       { code: 'invalidRequest' },
       {
-        message: `contextWindow must be a positive finite number, got ${String(window)} (a provider reporting 0 must map it to UNKNOWN — see normalizeContextWindow and DECISIONS.md D9)`,
+        message: `contextWindow must be a positive finite number, got ${String(window)} (a provider reporting 0 must map it to UNKNOWN — see normalizeContextWindow)`,
       }
     );
   }
