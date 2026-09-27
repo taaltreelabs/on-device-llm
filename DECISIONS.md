@@ -4,6 +4,24 @@ Newest first. Each entry: what was decided, why, and what evidence it rests on. 
 
 ## 2026-09-25 — Post-release
 
+### D42: The platform floor is iOS 16.4 with FoundationModels weak-linked; iOS 26.0 is the on-device floor
+
+D4 pinned the floor at iOS 27 / macOS 27, deliberately excluding iOS 26 even though 26 is the release that shipped FoundationModels. That floor made the podspec's own platform iOS 27.0, and D22 already recorded the consequence: `expo-modules-autolinking` drops any pod whose platform exceeds the app's deployment target, so **every app that had not itself raised its target to 27.0 lost the module silently** — a green build, an empty `Podfile.lock` entry, `unsupportedPlatform` forever, on any OS including 27. That is not a survivable default for a package whose entire pitch is a cloud-fallback router: the fallback exists precisely for the devices that cannot run the model, and a floor that makes the *package* uninstallable on those devices defeats the design before a single request is routed. So the podspec floor moves to **iOS 16.4** — `ExpoModulesCore`'s own floor, and the Expo template's default deployment target — so autolinking never drops the module for any app at or above 16.4, and `FoundationModels` is weak-linked (`s.weak_frameworks`) so the app still launches, and everything else on the module reports `unavailable`/`unsupportedPlatform`, below iOS 26. On iOS 26.x the on-device model now runs, with the documented gaps below; iOS 27 behaviour is unchanged.
+
+D4's own rationale for stopping at 27 was "no dual-taxonomy path": iOS 27 replaced iOS 26's `LanguageModelSession.GenerationError` wholesale with `LanguageModelError`/`LanguageModelSession.Error`/`SystemLanguageModel.Error`/`GeneratedContent.ParsingError`, and mapping both the old and new error surfaces looked like unbounded cost for a floor nobody asked to keep. That assessment was correct about *where* the cost would land — it is exactly the dual-path mapper `ErrorMapping.swift` now carries — but wrong about the *size*: the second taxonomy is a mapping table over nine already-known `GenerationError` cases, roughly 120 lines including the `#available`-gated dispatch, not a second bridge. Once written, it is a fixed cost paid once, not a per-symbol tax that grows with the framework.
+
+**Consequences, all documented in `docs/research/ios26-compat.md`:**
+
+- Below iOS 26: every native function answers `unavailable`/`unsupportedPlatform`; the router falls through to the cloud provider, same as any other unavailable provider.
+- On iOS 26.x, versus iOS 27: `contextOverflow` carries no `contextSize`/`tokenCount`; `unsupportedLocale` names no locale; `decodingFailure` carries no raw output (`rawContent`); `rateLimited` has no `resetDate`; there is no per-response `usage`, so `finishReason` is always `'stop'`, even when output was truncated; token counting is exact from 26.4 onward and falls back to the core heuristic estimator below that (`capabilities().tokenCounting: 'estimated'`, which widens the context manager's safety margin to 256 per D10); `modelLabel` is the fixed string `"Apple Foundation Model"` and the `supports*` flags are fixed (guided generation and tools `true`, vision and reasoning `false`) rather than queried per device; `contextWindow` is `4096` below iOS 26.4.
+- iOS 27 behaviour is unchanged in every respect.
+
+**Verified:** the Swift harness, 42/42 on macOS 27, including new checks that run the full iOS 26 `GenerationError` mapping table through synthesized errors and check the `capabilities()` contract keys; a Swift 6 typecheck of `ios/Core/*.swift` at iOS 16.4, 26.0, and 27.0; the example app prebuilt at the Expo template's default target (16.4) with the module linked (`Podfile.lock` carries the `OnDeviceLlm` entry — the D22 trap does not fire); a Debug build launched on iOS 26.5 and iOS 26.0 Simulators with the iOS 26 capability fallbacks observed live from the native module (`usageReporting: false`, the fixed `modelLabel` and flags; `tokenCounting: 'exact'` on 26.5 and `'estimated'` on 26.0, where native `countTokens` returned the contract's `invalidRequest` and the TypeScript provider estimated instead); the legacy mapper's `guardrailViolation` row observed on a real 26.0 throw; and `LC_LOAD_WEAK_DYLIB` for `FoundationModels`, with 203/203 undefined FoundationModels symbols reported `weak external` by `nm`.
+
+**Not verified:** a successful generation on a real iOS 26 device — both Simulator runs failed inside Apple's own model service because its safety classifier cannot load (a simulator-on-macOS-27-host mismatch rather than evidence about iOS 26 devices; 26.0 reports it as a `guardrail` trip that does not fall back, 26.5 as an untyped transient error that does), so no `usage`-absent result has been observed on iOS 26; the below-26 `unsupportedPlatform` launch path on a real pre-26 OS (no such simulator runtime is installed); and a Release build's weak-link load command (only Debug, where app code lives in a separate `.dylib`, was built).
+
+Full findings, the symbol-by-symbol `#available` table, and the build evidence: `docs/research/ios26-compat.md`.
+
 ### D41: The package ships an Expo config plugin that applies the iOS 27 scene life cycle patch
 
 D40 found that every fresh Expo 57 app crashes at launch on the iOS 27 SDK until three native edits are made. A README section alone leaves every new consumer to find it after a crash, and `prebuild --clean` silently undoes a hand-applied patch. So the package now ships a config plugin (`"plugins": ["@taaltreelabs/on-device-llm"]`) that makes the edits during `prebuild`.
@@ -225,6 +243,8 @@ Measured, not assumed. `Task.cancel()` is the only cancellation mechanism the fr
 
 ### D22: The example app must set an iOS 27 deployment target or the module is silently not linked
 
+> **Superseded 2026-09-25 (D42).** The podspec floor is now 16.4, at or below the Expo template default, so this trap no longer fires for a default-configured app. See D42.
+
 Not a design decision so much as a trap worth recording. `expo-modules-autolinking`'s CocoaPods integration filters modules by deployment target (`autolinking_manager.rb` → `pod.supports_platform?`). With the example's Podfile platform at the template default of 16.4 and our podspec at iOS 27.0 (D4), `pod install` **silently omits `OnDeviceLlm` entirely** — `Podfile.lock` has no entry, the app builds green, and `requireNativeModule('OnDeviceLlm')` fails at runtime. Raising `ios.deploymentTarget` to `27.0` links it; the app target's own `IPHONEOS_DEPLOYMENT_TARGET` must be raised too, or the app's Swift fails with *"compiling for iOS 16.4, but module 'OnDeviceLlm' has a minimum deployment target of iOS 27.0"*. With both raised, the example app builds clean for the iOS Simulator with zero warnings from our sources.
 
 ## 2026-09-21 — Phase 2 (context manager)
@@ -281,6 +301,8 @@ All four surveyed bridges conflict with the stateless message-based design: thre
 The first consumer is an Expo app, the single-package shape follows the Expo module convention, and the maintainer wants minimal native surface. No concrete performance need justifies Nitro's extra tooling. Whether to use the classic definition DSL or the newer Swift-macro Modules API 2.0 is deferred to Phase 3 when the Swift work starts.
 
 ### D4: Platform floor — iOS 27+ / macOS 27+, Expo SDK 57 / RN 0.86 only
+
+> **Superseded 2026-09-25 (D42).** The floor is lowered: the podspec now targets iOS 16.4, and the on-device model runs from iOS 26.0. See D42.
 
 Maintainer directive (2026-09-20): target only the current OS releases and their current RN/Expo pairing. Older iOS (including 26, which shipped the framework) gets `unavailable`/`unsupportedPlatform` from the Apple provider — no compatibility code paths. Consequences: no dual-path `GenerationError` handling (iOS 27 replaced the error enum wholesale; we map only `LanguageModelError` + a raw `NSError` fallback), Metro `exports` resolution is a non-issue (default since RN 0.79), and iOS 26.4's `tokenCount(for:)` API is safely inside the floor. Trade-off accepted: devices on older OS versions always route to cloud.
 
