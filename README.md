@@ -12,7 +12,7 @@ Run prompts with Apple's Foundation Models, connect your own Chat Completions-co
 endpoint, and use the same interface for both.
 
 [Documentation](https://taaltreelabs.com/docs/on-device-llm/) ·
-[Example app](https://github.com/taaltreelabs/on-device-llm/tree/main/example) ·
+[Example app](example) ·
 [Report an issue](https://github.com/taaltreelabs/on-device-llm/issues)
 
 **Early release:** the API may change before 1.0.
@@ -34,9 +34,9 @@ endpoint, and use the same interface for both.
 | Cloud generation           | A Chat Completions-compatible endpoint and a model available on that endpoint                                  |
 | React hooks                | React                                                                                                          |
 
-The [example app](https://github.com/taaltreelabs/on-device-llm/tree/main/example)
+The [example app](example)
 uses **Expo SDK 57 and React Native 0.86.3**. See the
-[compatibility guide](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/compatibility.md)
+[compatibility guide](docs/compatibility.md)
 for repository versions, native build requirements, and feature support.
 
 On older iOS versions and on Android, web, or Node.js, the Apple provider reports
@@ -67,7 +67,7 @@ Add the package to your existing `plugins` list in `app.json`:
 
 The plugin applies the scene lifecycle setup needed by the Expo 57 template when
 building with the iOS 27 SDK. If you have customized your native app, check the
-[setup troubleshooting guide](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/troubleshooting.md#the-app-crashes-at-launch-with-uiscene-life-cycle-is-required).
+[setup troubleshooting guide](docs/troubleshooting.md#the-app-crashes-at-launch-with-uiscene-life-cycle-is-required).
 
 ### 2. Add a chat component
 
@@ -126,7 +126,7 @@ export function Assistant() {
 `useChat` manages history, fits it to the context budget, and exposes streamed text
 and errors. Passing `expo/fetch` enables cloud streaming in Expo; without a streaming
 `fetch`, cloud responses arrive as one final text delta. Apple streaming uses the
-native bridge. See the [streaming guide](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/streaming.md)
+native bridge. See the [streaming guide](docs/streaming.md)
 for other React Native setups.
 
 For an **on-device-only** app, pass `createAppleProvider()` directly as the hook's
@@ -141,7 +141,7 @@ npx expo run:ios
 
 Use a supported physical device to try on-device generation. Rebuild after native
 configuration changes; a JavaScript reload cannot apply them. If you already manage
-an `ios/` directory, follow the [native setup troubleshooting](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/troubleshooting.md)
+an `ios/` directory, follow the [native setup troubleshooting](docs/troubleshooting.md)
 to apply the plugin changes to your build.
 
 ## Cloud fallback and privacy
@@ -164,22 +164,22 @@ or automatically select OpenAI's servers.
 
 There is **no mid-stream fallback** after the router delivers its first event.
 The `onRoute` callback reports routing metadata without prompt or response content.
-See [routing policies and fallback](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/routing.md)
+See [routing policies and fallback](docs/routing.md)
 for controls and examples.
 
 ## Documentation
 
-| I want to…                                           | Guide                                                                                                  |
-| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Check supported platforms, features, or availability | [Compatibility](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/compatibility.md)         |
-| Choose imports or use the package in Node.js         | [Import paths](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/imports.md)                |
-| Manage long chats or include current app state       | [Context management](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/context.md)          |
-| Control provider selection and fallback              | [Routing](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/routing.md)                     |
-| Generate structured data                             | [Structured output](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/structured-output.md) |
-| Let the model call app functions                     | [Tool calling](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/tools.md)                  |
-| Stream cloud responses in React Native               | [Streaming](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/streaming.md)                 |
-| Add another provider or use a test double            | [Custom providers](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/custom-providers.md)   |
-| Fix setup or runtime problems                        | [Troubleshooting](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/troubleshooting.md)     |
+| I want to…                                           | Guide                                          |
+| ---------------------------------------------------- | ---------------------------------------------- |
+| Check supported platforms, features, or availability | [Compatibility](docs/compatibility.md)         |
+| Choose imports or use the package in Node.js         | [Import paths](docs/imports.md)                |
+| Manage long chats or include current app state       | [Context management](docs/context.md)          |
+| Control provider selection and fallback              | [Routing](docs/routing.md)                     |
+| Generate structured data                             | [Structured output](docs/structured-output.md) |
+| Let the model call app functions                     | [Tool calling](docs/tools.md)                  |
+| Stream cloud responses in React Native               | [Streaming](docs/streaming.md)                 |
+| Add another provider or use a test double            | [Custom providers](docs/custom-providers.md)   |
+| Fix setup or runtime problems                        | [Troubleshooting](docs/troubleshooting.md)     |
 
 Tool calling is currently supported by the Apple provider, not the cloud provider.
 Structured output support depends on the provider and schema; see the guides for
@@ -191,9 +191,9 @@ shows integration patterns and provides a manual test environment.
 
 ## Contributing
 
-See [CONTRIBUTING.md](https://github.com/taaltreelabs/on-device-llm/blob/main/CONTRIBUTING.md)
+See [CONTRIBUTING.md](CONTRIBUTING.md)
 for local setup, repository layout, and checks.
 
 ## License
 
-[MIT](https://github.com/taaltreelabs/on-device-llm/blob/main/LICENSE) · Built by [TaalTree Labs](https://taaltreelabs.com).
+[MIT](LICENSE) · Built by [TaalTree Labs](https://taaltreelabs.com).
