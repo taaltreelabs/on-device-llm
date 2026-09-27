@@ -4,13 +4,16 @@
  *
  * All of Phase 3 steps 1-7: availability with reason codes, capabilities and
  * locales; `generate` and `stream` (deltas, with cancellation that really stops
- * native generation) from a session built per request; prewarming; exact token
- * counting; structured output from a normalized JSON Schema; and tool calling,
- * where a native tool call suspends on a continuation while the request's
- * handler runs in JavaScript (DECISIONS.md D23-D26).
+ * native generation) from a session built per request; prewarming; token
+ * counting (exact on iOS 26.4+, the core heuristic estimator on the rest of
+ * the iOS 26.0+ floor — DECISIONS.md D42/D10); structured output from a
+ * normalized JSON Schema; and tool calling, where a native tool call suspends
+ * on a continuation while the request's handler runs in JavaScript
+ * (DECISIONS.md D23-D26).
  */
 
 import {
+  estimateTokens,
   LLMError,
   normalizeContextWindow,
   toLLMError,
@@ -23,12 +26,13 @@ import {
   type Message,
   type RequestOptions,
   type StreamEvent,
+  type TokenCounting,
   type ToolExecutor,
   type UnknownValue,
 } from '../core';
 import { toLLMErrorFromNative, toUnavailableReason } from './errors';
 import { resolveNativeModule } from './native/resolve';
-import type { AppleNativeModule } from './native/types';
+import type { AppleNativeModule, NativeCapabilities } from './native/types';
 import { bridgeNativeStream } from './stream-bridge';
 import {
   buildNativeRequest,
@@ -77,14 +81,23 @@ export interface AppleProviderConfig {
 
 const PLATFORM_DETAIL =
   'Apple FoundationModels is not available in this process. Expected on Android, on web, ' +
-  'under Node, and on any iOS build without the native module (the package floor is iOS 27, ' +
-  'DECISIONS.md D4).';
+  'under Node, and on any iOS build without the native module (on-device requires iOS 26 ' +
+  'or later, DECISIONS.md D42).';
 
 export class AppleProvider implements LLMProvider {
   readonly id: string;
 
   private readonly config: AppleProviderConfig;
   private readonly resolveNative: NativeResolver;
+  /**
+   * Memoized answer to "can this device count tokens exactly?", keyed on the
+   * native module instance. The OS version cannot change while the process
+   * runs, so one `capabilities()` round trip settles it for the provider's
+   * lifetime; without this, every `fitContext` measurement would cost a
+   * bridge hop before it even started counting. A rejected lookup is not
+   * cached, so a transient bridge failure (D9) is retried next time.
+   */
+  private tokenCountingMode?: { native: AppleNativeModule; mode: Promise<TokenCounting> };
 
   /**
    * @param resolveNative - injection seam for tests. Production code uses the
@@ -177,11 +190,20 @@ export class AppleProvider implements LLMProvider {
    * `structuredOutput` follows `guidedGeneration`, `tools` follows
    * `toolCalling` *and* the presence of `resolveToolCall` on the native module
    * (a JS half newer than the native half must not advertise a protocol the
-   * native side cannot speak), and `tokenCounting` is `'exact'` when
-   * `countTokens` is there — `SystemLanguageModel.tokenCount(for:)` is the
-   * model's own tokenizer, not an estimate. Advertising a capability the bridge
-   * cannot honour would make the Phase 4 router route *toward* a provider that
-   * is about to fail.
+   * native side cannot speak). Advertising a capability the bridge cannot
+   * honour would make the Phase 4 router route *toward* a provider that is
+   * about to fail.
+   *
+   * `tokenCounting` is the **native-reported value**
+   * (`NativeCapabilities.tokenCounting`), not inferred from whether
+   * `countTokens` exists on the bridge: the on-device floor is iOS 26.0, and
+   * `SystemLanguageModel.tokenCount(for:)` only exists from 26.4 onward
+   * (DECISIONS.md D42), so a device can be on-floor and still have no exact
+   * counter. `'exact'` additionally requires `native.countTokens` to actually
+   * be a function, for the same JS-newer-than-native reason as `tools` above.
+   * This never reports `'none'`: `countTokens()` below always has an answer
+   * for a resolvable native module, either native's own or the core
+   * estimator's, so `'none'` stays reserved for "no native module at all".
    */
   async capabilities(): Promise<Capabilities> {
     const unavailable: Capabilities = {
@@ -222,12 +244,49 @@ export class AppleProvider implements LLMProvider {
       tools:
         nativeCapabilities.supportsToolCalling !== false &&
         typeof native.resolveToolCall === 'function',
-      tokenCounting: typeof native.countTokens === 'function' ? 'exact' : 'none',
+      tokenCounting: this.resolveTokenCounting(nativeCapabilities, native),
       locales: locales !== undefined && locales.length > 0 ? locales : UNKNOWN,
       ...(nativeCapabilities.modelLabel !== undefined
         ? { modelLabel: nativeCapabilities.modelLabel }
         : {}),
     };
+  }
+
+  /**
+   * Whether `countTokens` can be answered from the model's own tokenizer.
+   *
+   * Shared by {@link capabilities} and {@link countTokens} so the two never
+   * disagree: the same rule that puts `'exact'` on the advertised
+   * capabilities is the rule that decides whether `countTokens` is allowed to
+   * touch the bridge at all.
+   *
+   * `nativeCapabilities.tokenCounting` is optional on the wire (a native
+   * module built before this field existed sends nothing); missing defaults
+   * to `'estimated'` per DECISIONS.md D10 — see `NativeCapabilities.tokenCounting`.
+   */
+  private resolveTokenCounting(
+    nativeCapabilities: Pick<NativeCapabilities, 'tokenCounting'>,
+    native: AppleNativeModule
+  ): TokenCounting {
+    return nativeCapabilities.tokenCounting === 'exact' && typeof native.countTokens === 'function'
+      ? 'exact'
+      : 'estimated';
+  }
+
+  /** {@link resolveTokenCounting} for this native module, computed once (see `tokenCountingMode`). */
+  private tokenCountingModeFor(native: AppleNativeModule): Promise<TokenCounting> {
+    if (this.tokenCountingMode?.native !== native) {
+      const mode = native
+        .capabilities()
+        .then((nativeCapabilities) => this.resolveTokenCounting(nativeCapabilities, native));
+      mode.catch(() => {
+        if (this.tokenCountingMode?.mode === mode) {
+          this.tokenCountingMode = undefined;
+        }
+      });
+      this.tokenCountingMode = { native, mode };
+    }
+    return this.tokenCountingMode.mode;
   }
 
   /** `SystemLanguageModel.supportsLocale`, exposed so apps can pre-check without configuring one. */
@@ -267,30 +326,57 @@ export class AppleProvider implements LLMProvider {
   }
 
   /**
-   * Exact token count for these messages, from the model's own tokenizer.
+   * Token count for these messages: exact when the device has
+   * `SystemLanguageModel.tokenCount(for:)` (iOS 26.4+), the core heuristic
+   * estimator otherwise.
    *
-   * Throws rather than falling back to an estimate. That is the contract
-   * `LLMProvider.countTokens` asks for and it matters: `createMeasure` catches
-   * the throw, estimates instead, and records
-   * `source: 'estimatorAfterCounterFailure'`, which widens the context
-   * manager's safety margin from 64 tokens to 256 (D10). A silent estimate here
-   * would report an exact-looking number and keep the narrow margin — which is
-   * how a "measured" budget overflows. `ModelManagerError 1013` from these
+   * The on-device floor is iOS 26.0 (DECISIONS.md D42), which is *below* 26.4,
+   * so "the native module resolved" no longer implies exact counting is
+   * possible. This method re-derives the same `'exact'`/`'estimated'` answer
+   * `capabilities()` would give (via {@link resolveTokenCounting}) and never
+   * calls native `countTokens` when it says `'estimated'` — that overload
+   * resolves `{ ok: false, error: { code: 'invalidRequest', … } }` on those OS
+   * versions (the fixed native contract), so calling it would spend a bridge
+   * hop only to fail in a way indistinguishable from a *real* counter failure.
+   * Estimating directly instead keeps the measurement's provenance honest:
+   * `createMeasure` records it as `'providerEstimated'` (a normal, expected
+   * answer for this OS range) rather than `'estimatorAfterCounterFailure'` (a
+   * D9-style malfunction), though both land on the same wider 256-token
+   * safety margin (D10) either way.
+   *
+   * When counting *is* exact and the underlying call still throws or returns
+   * nonsense, this throws rather than falling back to an estimate itself —
+   * that is the contract `LLMProvider.countTokens` asks for: `createMeasure`
+   * catches the throw, estimates instead, and records
+   * `source: 'estimatorAfterCounterFailure'`, which widens the safety margin
+   * from 64 tokens to 256. A silent estimate here would report an
+   * exact-looking number and keep the narrow margin — which is how a
+   * "measured" budget overflows. `ModelManagerError 1013` from these
    * overloads is not hypothetical (D9).
    */
   async countTokens(messages: readonly Message[]): Promise<number> {
     const native = this.requireNative();
-    if (native.countTokens === undefined) {
-      throw new LLMError(
-        { code: 'unknown', transient: false },
-        {
-          message:
-            'This build of the native module does not implement token counting. ' +
-            '`capabilities().tokenCounting` reports `none`, so callers should estimate.',
-          providerId: this.id,
-        }
-      );
+
+    let tokenCounting: TokenCounting;
+    try {
+      tokenCounting = await this.tokenCountingModeFor(native);
+    } catch (err) {
+      throw toLLMError(err, { providerId: this.id, transient: true });
     }
+
+    if (tokenCounting !== 'exact') {
+      return estimateTokens(messages);
+    }
+
+    // Reachable only in the (structurally impossible today, but
+    // defense-in-depth) case where `resolveTokenCounting` disagrees with
+    // itself between the check above and here; `native.countTokens` is
+    // guaranteed to be a function whenever `resolveTokenCounting` answers
+    // `'exact'`.
+    if (native.countTokens === undefined) {
+      return estimateTokens(messages);
+    }
+
     const outcome = await native.countTokens(
       messages.map((message) => ({ role: message.role, content: message.content }))
     );

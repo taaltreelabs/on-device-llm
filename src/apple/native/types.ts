@@ -45,9 +45,46 @@ export interface NativeCapabilities {
   readonly supportsGuidedGeneration?: boolean;
   readonly supportsToolCalling?: boolean;
   readonly supportsReasoning?: boolean;
+  /**
+   * Whether `countTokens(messages)` can answer with the model's own
+   * tokenizer. `SystemLanguageModel.tokenCount(for:)` arrived in iOS 26.4;
+   * the on-device floor is iOS 26.0 (DECISIONS.md D42), so a device on
+   * 26.0–26.3 has no exact API at all and `countTokens` on it resolves
+   * `{ ok: false, error: { code: 'invalidRequest', … } }` rather than a
+   * number. The TypeScript provider reads this field to decide whether it
+   * may call native `countTokens` at all — see `AppleProvider.countTokens`.
+   *
+   * Optional on the wire so a native module built before this field existed
+   * (or a message a future OS version doesn't bother setting) still
+   * round-trips. **Missing defaults to `'estimated'`, not `'exact'`**: an
+   * unreported value is an unknown quantity, and DECISIONS.md D10 makes
+   * `'estimated'` the safe direction — it earns the wider 256-token safety
+   * margin instead of the narrow 64-token one an unearned `'exact'` would
+   * get.
+   */
+  readonly tokenCounting?: 'exact' | 'estimated';
+  /**
+   * Whether a `NativeResult.usage` will actually be populated. iOS 26.0–26.3
+   * (and, per the harness, 26.x generally) has no per-response usage API, so
+   * `usage` on those OS versions is either absent or present with every field
+   * `undefined`; iOS 27 reports all four (see `core`'s `TokenUsage`).
+   *
+   * Optional on the wire for the same reason as {@link tokenCounting}, and
+   * **missing defaults to `false`** — the safe assumption for a native
+   * module this TypeScript half knows nothing about is that it does not
+   * report usage, not that it does.
+   */
+  readonly usageReporting?: boolean;
 }
 
-/** Token usage, shaped like `core`'s `TokenUsage`. */
+/**
+ * Token usage, shaped like `core`'s `TokenUsage`.
+ *
+ * On iOS 26.x (`NativeCapabilities.usageReporting: false`) every field may be
+ * `undefined` even when the object itself is present — `wire.ts#toTokenUsage`
+ * drops such an all-`undefined` object rather than handing callers
+ * `{ inputTokens: undefined, … }`.
+ */
 export interface NativeUsage {
   readonly inputTokens?: number;
   readonly outputTokens?: number;
@@ -60,6 +97,7 @@ export interface NativeResult {
   readonly text: string;
   /** A `core` `FinishReason` string. */
   readonly finishReason: string;
+  /** Absent, or present with every field `undefined`, on iOS 26.x — see {@link NativeCapabilities.usageReporting}. */
   readonly usage?: NativeUsage;
   /**
    * Structured output as JSON text (`GeneratedContent.jsonString`), present iff

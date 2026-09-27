@@ -21,6 +21,10 @@ import type {
 
 export class FakeNativeModule implements AppleNativeModule {
   availabilityResult: NativeAvailability = { available: true };
+  // Defaults to the iOS 27 shape — exact counting and real per-response usage
+  // — so every existing test that does not touch these two fields keeps
+  // exercising the behaviour it was written for. Tests for the iOS
+  // 26.0-26.3 floor (DECISIONS.md D42) override both explicitly.
   capabilitiesResult: NativeCapabilities = {
     contextWindow: 8192,
     locales: ['en', 'nl', 'fr', 'de', 'es'],
@@ -29,6 +33,8 @@ export class FakeNativeModule implements AppleNativeModule {
     supportsGuidedGeneration: true,
     supportsToolCalling: true,
     supportsReasoning: false,
+    tokenCounting: 'exact',
+    usageReporting: true,
   };
   supportedLocales = new Set(['en', 'nl', 'nl-NL', 'fr', 'de', 'es']);
   generateResult: NativeGenerateOutcome = {
@@ -47,6 +53,7 @@ export class FakeNativeModule implements AppleNativeModule {
     cancel: string[];
     prewarm: unknown[];
     countTokens: unknown[];
+    capabilities: number;
     resolveToolCall: { callId: string; resultJson: string | null; errorMessage: string | null }[];
   } = {
     generate: [],
@@ -54,6 +61,7 @@ export class FakeNativeModule implements AppleNativeModule {
     cancel: [],
     prewarm: [],
     countTokens: [],
+    capabilities: 0,
     resolveToolCall: [],
   };
 
@@ -87,6 +95,7 @@ export class FakeNativeModule implements AppleNativeModule {
   }
 
   async capabilities(): Promise<NativeCapabilities> {
+    this.calls.capabilities += 1;
     if (this.throwFrom.capabilities) throw this.throwFrom.capabilities;
     return this.capabilitiesResult;
   }

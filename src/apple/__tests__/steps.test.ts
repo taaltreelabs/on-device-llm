@@ -4,7 +4,14 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { createMeasure, isLLMError, type GenerateRequest, type StreamEvent } from '../../core';
+import {
+  createMeasure,
+  DEFAULT_SAFETY_MARGIN_ESTIMATED_TOKENS,
+  fitContext,
+  isLLMError,
+  type GenerateRequest,
+  type StreamEvent,
+} from '../../core';
 import { AppleProvider } from '../provider';
 import { FakeNativeModule } from './fake-native';
 
@@ -39,10 +46,25 @@ describe('capabilities', () => {
     (native as { resolveToolCall?: unknown }).resolveToolCall = undefined;
     (native as { countTokens?: unknown }).countTokens = undefined;
     const provider = new AppleProvider({}, () => native);
+    // The model reports `tokenCounting: 'exact'`, but there is no
+    // `countTokens` function to call it on (a JS half newer than the native
+    // half) — `'estimated'` is what stays honest, not `'none'` (that is
+    // reserved for "no native module at all"; `countTokens()` itself still
+    // answers via the core estimator, see steps below).
     await expect(provider.capabilities()).resolves.toMatchObject({
       tools: false,
-      tokenCounting: 'none',
+      tokenCounting: 'estimated',
     });
+  });
+
+  it("defaults tokenCounting to 'estimated' when the wire omits it (older native build, D10)", async () => {
+    const native = new FakeNativeModule();
+    // No `tokenCounting`/`usageReporting` at all — a native module built
+    // before this field existed. Missing must read as the *safe* direction,
+    // not as 'exact': an unreported native module is an unknown quantity.
+    native.capabilitiesResult = { contextWindow: 8192, locales: ['en'] };
+    const provider = new AppleProvider({}, () => native);
+    await expect(provider.capabilities()).resolves.toMatchObject({ tokenCounting: 'estimated' });
   });
 
   it('follows the model when it reports a capability as absent', async () => {
@@ -91,12 +113,70 @@ describe('prewarm', () => {
 });
 
 describe('countTokens', () => {
-  it('returns the native count', async () => {
+  it("returns the native count when the model reports tokenCounting: 'exact' (iOS 26.4+)", async () => {
     const native = new FakeNativeModule();
     native.countTokensResult = { ok: true, count: 17 };
     const provider = new AppleProvider({}, () => native);
     await expect(provider.countTokens([{ role: 'user', content: 'hi' }])).resolves.toBe(17);
     expect(native.calls.countTokens[0]).toEqual([{ role: 'user', content: 'hi' }]);
+  });
+
+  it(
+    'estimates instead of calling native when the model reports tokenCounting: ' +
+      "'estimated' (iOS 26.0-26.3, no exact tokenCount(for:) at all — D42/D10)",
+    async () => {
+      const native = new FakeNativeModule();
+      native.capabilitiesResult = { ...native.capabilitiesResult, tokenCounting: 'estimated' };
+      const provider = new AppleProvider({}, () => native);
+
+      await expect(provider.capabilities()).resolves.toMatchObject({ tokenCounting: 'estimated' });
+
+      const tokens = await provider.countTokens([{ role: 'user', content: 'hello there' }]);
+      expect(tokens).toBeGreaterThan(0);
+      // The fixed native contract has `countTokens` resolve `{ ok: false, … }`
+      // on these OS versions — calling it would spend a bridge hop only to
+      // fail, so it must never be reached.
+      expect(native.calls.countTokens).toHaveLength(0);
+    }
+  );
+
+  it('asks native capabilities() once for the counting mode, not once per countTokens call', async () => {
+    const native = new FakeNativeModule();
+    const provider = new AppleProvider({}, () => native);
+    const messages = [{ role: 'user' as const, content: 'hello there' }];
+
+    await provider.countTokens(messages);
+    await provider.countTokens(messages);
+    await provider.countTokens(messages);
+
+    // The OS version cannot change while the process runs, so the mode is
+    // settled by one round trip; every `fitContext` measurement after that
+    // goes straight to the counter.
+    expect(native.calls.capabilities).toBe(1);
+    expect(native.calls.countTokens).toHaveLength(3);
+  });
+
+  it('retries the counting-mode lookup after a transient capabilities() failure', async () => {
+    const native = new FakeNativeModule();
+    const provider = new AppleProvider({}, () => native);
+    const messages = [{ role: 'user' as const, content: 'hello there' }];
+
+    native.throwFrom.capabilities = new Error('bridge hiccup');
+    await expect(provider.countTokens(messages)).rejects.toSatisfy((e) => isLLMError(e));
+
+    native.throwFrom.capabilities = undefined;
+    await expect(provider.countTokens(messages)).resolves.toBe(42);
+    expect(native.calls.capabilities).toBe(2);
+  });
+
+  it("estimates instead of calling native when tokenCounting is missing from the wire (defaults to 'estimated')", async () => {
+    const native = new FakeNativeModule();
+    native.capabilitiesResult = { contextWindow: 8192, locales: ['en'] };
+    const provider = new AppleProvider({}, () => native);
+
+    const tokens = await provider.countTokens([{ role: 'user', content: 'hello there' }]);
+    expect(tokens).toBeGreaterThan(0);
+    expect(native.calls.countTokens).toHaveLength(0);
   });
 
   it('throws a typed LLMError when the counter fails (D9: ModelManagerError 1013)', async () => {
@@ -147,6 +227,36 @@ describe('countTokens', () => {
     expect(measurement.tokens).toBeGreaterThan(0);
     expect(isLLMError(measurement.cause, 'unknown')).toBe(true);
   });
+
+  it(
+    'fitContext widens the safety margin to 256 for a device reporting ' +
+      "tokenCounting: 'estimated' (iOS 26.0-26.3, D42/D10)",
+    async () => {
+      const native = new FakeNativeModule();
+      native.capabilitiesResult = {
+        ...native.capabilitiesResult,
+        contextWindow: 4096,
+        tokenCounting: 'estimated',
+      };
+      const provider = new AppleProvider({}, () => native);
+
+      const result = await fitContext([{ role: 'user', content: 'hello there' }], {
+        provider,
+        reservedForOutput: 100,
+      });
+
+      // This is the steady-state shape on that OS range, not a counter
+      // failure: the measurement source is `providerEstimated`, not
+      // `estimatorAfterCounterFailure`, and native `countTokens` is never
+      // reached to produce it.
+      expect(result.measurement).toMatchObject({ kind: 'estimated', source: 'providerEstimated' });
+      expect(result.budget).toMatchObject({
+        kind: 'bounded',
+        safetyMargin: DEFAULT_SAFETY_MARGIN_ESTIMATED_TOKENS,
+      });
+      expect(native.calls.countTokens).toHaveLength(0);
+    }
+  );
 });
 
 describe('structured output', () => {
