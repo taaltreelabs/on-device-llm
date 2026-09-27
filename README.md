@@ -15,8 +15,6 @@ endpoint, and use the same interface for both.
 [Example app](example) ·
 [Report an issue](https://github.com/taaltreelabs/on-device-llm/issues)
 
-**Early release:** the API may change before 1.0.
-
 ## Features
 
 - **On-device generation:** use Apple's model on supported devices, including streaming, structured output, and tool calling.
