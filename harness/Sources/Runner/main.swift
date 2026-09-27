@@ -10,7 +10,7 @@
 //  but the maintainer's desk. It says which of the two happened, loudly.
 //
 //  `swift run Runner <group>…` runs only the named groups
-//  (baseline, prewarm, tokens, schema, constraints, tools).
+//  (baseline, compat, prewarm, tokens, schema, constraints, tools).
 //
 
 import Foundation
@@ -38,7 +38,10 @@ guard modelIsUsable() else {
   exit(0)
 }
 
-print("model: \(SystemLanguageModel.default.variant.displayName)")
+// Through `ModelInfo` rather than `variant.displayName` directly: `variant` is
+// macOS 27 API and this package targets macOS 26.0 (the iOS 26 floor), and the
+// label `capabilities()` reports is the one worth seeing anyway.
+print("model: \(ModelInfo.capabilities()["modelLabel"] as? String ?? "?")")
 
 // DECISIONS.md D9, in its natural habitat: `availability` reports `.available`
 // while every generation fails with `com.apple.SensitiveContentAnalysisML
@@ -68,6 +71,7 @@ if let blocker = await preflightFailure() {
 let harness = Harness()
 
 if wants("baseline") { await runBaselineChecks(harness) }
+if wants("compat") { await runCompatChecks(harness) }
 if wants("prewarm") { await runPrewarmChecks(harness) }
 if wants("tokens") { await runTokenCountChecks(harness) }
 if wants("schema") { await runSchemaChecks(harness) }

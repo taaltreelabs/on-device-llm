@@ -192,6 +192,7 @@ actor ToolCallRegistry {
 /// `Generable`, so it is both a legal `Arguments` and trivially convertible to
 /// the JSON text JavaScript wants. `call` being `async throws` is what makes
 /// the JS round trip possible at all — no polling, no semaphores.
+@available(iOS 26.0, macOS 26.0, *)
 struct BridgedTool: Tool {
   typealias Arguments = GeneratedContent
   typealias Output = String

@@ -25,7 +25,11 @@ import PackageDescription
 
 let package = Package(
   name: "harness",
-  platforms: [.macOS("27.0")],
+  // macOS 26.0, not 27: the package floor is iOS 26.0 (ios/OnDeviceLlm.podspec),
+  // and compiling `ios/Core` at the 26 target is what proves every iOS 27 (and
+  // 26.4) symbol is behind an `#available` check. The runner still executes on
+  // whatever macOS the machine has, and takes the 27 paths there.
+  platforms: [.macOS("26.0")],
   targets: [
     .executableTarget(
       name: "Runner",
