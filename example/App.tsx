@@ -303,7 +303,14 @@ export default function App() {
                 <MessageBubble key={index} message={message} caption={routeCaptions[index]} />
               ))
             )}
-            {streamingText !== undefined ? (
+            {/* useChat leaves `streamingText` as `''` after a turn fails before any
+                token streamed (see its module doc's "partial text survives" note),
+                so once the turn is no longer in flight an empty string would render
+                as a bubble with nothing in it. Keep the bubble while a turn is in
+                flight (so the typing indicator still appears before the first
+                token), and keep any non-empty partial text visible after an error
+                -- just don't render an empty one once `status` is back to 'idle'. */}
+            {streamingText !== undefined && (chat.status !== 'idle' || streamingText !== '') ? (
               <MessageBubble
                 message={{ role: 'assistant', content: streamingText }}
                 streaming={chat.status === 'streaming'}
