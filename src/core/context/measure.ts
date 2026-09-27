@@ -5,9 +5,10 @@
  *
  * 1. **Prefer the provider's own counter, fall back to the estimator.** Only
  *    the provider knows its per-message framing, and Apple can count exactly
- *    (`tokenCount(for:)`, inside our OS floor). A cloud endpoint cannot count
- *    before the request, so `estimateTokens` is a permanent part of the path,
- *    not a stopgap.
+ *    (`tokenCount(for:)`) from iOS 26.4 — one step above the iOS 26.0
+ *    on-device floor (DECISIONS.md D42), so an on-floor device is not guaranteed an
+ *    exact counter. A cloud endpoint cannot count before the request, so
+ *    `estimateTokens` is a permanent part of the path, not a stopgap.
  * 2. **Carry *how* the number was obtained.** The safety margin is larger for
  *    estimates, and callers (and the Phase 4 `useChat`) want to know whether
  *    the number they are shown is a measurement or a guess. A bare `number`

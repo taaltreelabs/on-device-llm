@@ -90,10 +90,11 @@ export interface LLMProvider {
    * budget.
    *
    * Optional: present iff `capabilities().tokenCounting !== 'none'`. Apple
-   * can answer exactly (iOS 26.4+ `tokenCount(for:)`), a cloud provider
-   * usually cannot. Counting the *messages* rather than a string is
-   * deliberate — per-message framing overhead is provider-specific and only
-   * the provider knows it.
+   * can answer exactly (iOS 26.4+ `tokenCount(for:)`) and estimates below
+   * that OS version — the on-device floor is iOS 26.0 (DECISIONS.md D42) — while
+   * a cloud provider usually cannot count at all. Counting the *messages*
+   * rather than a string is deliberate — per-message framing overhead is
+   * provider-specific and only the provider knows it.
    *
    * Implementations should throw rather than guess when the underlying call
    * fails (Apple's has been observed throwing `ModelManagerError 1013`); the

@@ -101,8 +101,19 @@ func runConstraintMatrixChecks(_ harness: Harness) async {
     try await expectThrows("pattern at generation time") {
       try await generateWithProbe(#"{ "type": "string", "pattern": "[0-9]{4} [A-Z]{2}" }"#)
     } where: { error in
-      guard let modelError = error as? LanguageModelError else { return false }
-      if case .unsupportedGenerationGuide = modelError { return true }
+      if #available(macOS 27.0, *) {
+        if let modelError = error as? LanguageModelError,
+          case .unsupportedGenerationGuide = modelError
+        {
+          return true
+        }
+      }
+      // The iOS/macOS 26 spelling of the same rejection (sdk-surface.md §5).
+      if let generationError = error as? LanguageModelSession.GenerationError,
+        case .unsupportedGuide = generationError
+      {
+        return true
+      }
       return false
     }
   }

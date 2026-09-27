@@ -205,6 +205,17 @@ describe('generate', () => {
     await expect(make().generate(ask)).resolves.not.toHaveProperty('usage');
   });
 
+  it(
+    'omits usage when the native side reports an object with every field undefined ' +
+      '(iOS 26.x: no per-response usage API — NativeCapabilities.usageReporting: false)',
+    async () => {
+      native.generateResult = { ok: true, result: { text: 'x', finishReason: 'stop', usage: {} } };
+      const result = await make().generate(ask);
+      expect(result.usage).toBeUndefined();
+      expect(result).not.toHaveProperty('usage');
+    }
+  );
+
   it('maps an unrecognised finish reason to `other`', async () => {
     native.generateResult = { ok: true, result: { text: 'x', finishReason: 'wat' } };
     await expect(make().generate(ask)).resolves.toMatchObject({ finishReason: 'other' });

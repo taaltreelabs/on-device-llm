@@ -29,8 +29,10 @@ export function isUnknown<T>(value: T | UnknownValue): value is UnknownValue {
  * How trustworthy `LLMProvider.countTokens()` is.
  *
  * - `exact` — the provider counts with the model's own tokenizer. Apple
- *   ships this publicly (`SystemLanguageModel.tokenCount(for:)`, iOS 26.4+,
- *   inside our OS floor — docs/research/sdk-surface.md §1).
+ *   ships this publicly (`SystemLanguageModel.tokenCount(for:)`), but only
+ *   from iOS 26.4 — the on-device floor is iOS 26.0 (DECISIONS.md D42), so a
+ *   device on 26.0–26.3 is on-floor and still has no exact counter at all.
+ *   `AppleProvider` reports `'estimated'` there, not `'exact'`.
  * - `estimated` — a heuristic (see `estimateTokens`). The Phase 2 context
  *   manager applies a larger safety margin when it sees this.
  * - `none` — no counting available; `countTokens` is absent.

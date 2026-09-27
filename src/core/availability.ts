@@ -20,8 +20,8 @@
  * the taxonomy is shared with cloud and (eventually) Android providers.
  * `unsupportedPlatform` is ours, for the case Apple's enum cannot express:
  * the framework is not there at all (Android, web, or an OS below the
- * iOS 27 / macOS 27 floor — DECISIONS.md D4). Importing the package root on
- * such a platform must never throw; it must report this
+ * iOS 26.0 / macOS 26.0 floor — DECISIONS.md D42). Importing the package root
+ * on such a platform must never throw; it must report this
  * (docs/plan.md §4).
  *
  * `unsupportedLocale` is deliberately **absent**. Per DECISIONS.md D7,

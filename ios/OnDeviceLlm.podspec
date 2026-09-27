@@ -10,17 +10,41 @@ Pod::Spec.new do |s|
   s.author         = package['author']
   s.homepage       = package['homepage']
   s.license        = package['license']
-  # Platform floor per DECISIONS.md D4: this module targets the current OS
-  # release only. Older iOS (including 26, which shipped FoundationModels)
-  # gets `unavailable` / `unsupportedPlatform` from the Apple provider, not
-  # a compatibility code path.
+  # Platform floor: iOS 16.4, the floor of ExpoModulesCore itself
+  # (`ExpoModulesCore.podspec`), not the floor of FoundationModels. Expo
+  # autolinking silently drops any pod whose platform is above the app's
+  # deployment target (DECISIONS.md D22), and the Expo template's default
+  # target is 16.4, so a higher floor here would make every app that still
+  # supports older iOS lose the module without a build error. This supersedes
+  # the iOS 27 floor of D4.
+  #
+  # FoundationModels is iOS 26.0, so on this floor it is weak-linked (below)
+  # and nothing touches it before a runtime check: every `AsyncFunction` in
+  # OnDeviceLlmModule.swift checks `#available(iOS 26.0, *)` first and reports
+  # `unavailable` / `unsupportedPlatform` on older iOS, and everything in
+  # ios/Core that names a FoundationModels type is `@available(iOS 26.0, *)`.
+  # iOS 26.x API gaps (the iOS 26 error taxonomy, no usage reporting below 27,
+  # token counting from 26.4) are handled inside ios/Core with `#available`
+  # checks. docs/research/ios26-compat.md has the details and the evidence.
   s.platforms      = {
-    :ios => '27.0'
+    :ios => '16.4'
   }
   s.source         = { git: package['repository'] + '.git' }
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
+
+  # Weak-link FoundationModels, so an app running on iOS older than 26 (where
+  # the framework does not exist) still launches: dyld skips a missing weak
+  # dylib instead of aborting the process, and the `#available` checks above
+  # keep every reference to it unreached. The toolchain already gets there on
+  # its own: Swift emits every reference to a symbol newer than the deployment
+  # target as a weak reference, and the linker weak-links a dylib when all
+  # references into it are weak (measured: 203 of 203 in libOnDeviceLlm.a).
+  # So today this line states the intent rather than changing the load
+  # command, and it guards against the day one strong reference slips in, or
+  # a toolchain or build setting stops doing it (docs/research/ios26-compat.md).
+  s.weak_frameworks = 'FoundationModels'
 
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {

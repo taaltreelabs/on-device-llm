@@ -83,14 +83,22 @@ jobs:
   # so this job runs `expo prebuild` itself rather than checking anything
   # out.
   #
-  # --- Xcode 27 runner-image finding (researched 2026-09-22) -------------
-  # DECISIONS.md D4 pins the platform floor at iOS 27 / Xcode 27.1. As of
-  # this writing (see https://github.com/actions/runner-images), GitHub's
-  # general-availability hosted macOS image is `macos-26`, which ships
-  # Xcode 26.0 through 26.6 (iOS SDK up to 26.5) — below our floor, so it
-  # cannot build against the OnDeviceLlm podspec's iOS 27.0 deployment
-  # target (see the autolinking deployment-target trap documented in
-  # DECISIONS.md just above D4).
+  # --- Xcode 27 runner-image finding (researched 2026-09-22; deployment
+  # --- floor lowered to iOS 26.0 2026-09-25) --------------------------
+  # The podspec's *deployment target* floor is iOS 16.4, and the on-device
+  # model's own floor is iOS 26.0 (DECISIONS.md D42), but this job still
+  # targets the `xcode-27` runner, not because of either of those, but
+  # because the Swift sources name iOS 27-only
+  # FoundationModels symbols inside `#available` guards. Referencing a
+  # symbol under `#available(iOS 27, *)` — even one never reached at the
+  # 26.0 floor — requires a compiler that knows the symbol exists at all,
+  # which means an iOS 27 SDK. As of this writing (see
+  # https://github.com/actions/runner-images), GitHub's general-
+  # availability hosted macOS image is `macos-26`, which ships Xcode 26.0
+  # through 26.6 (iOS SDK up to 26.5) and has no knowledge of those iOS 27
+  # symbols at all — so a 26.x SDK cannot *compile* this module even
+  # though the module can *run* on a 26.0 device (the runtime `#available`
+  # guard just never opens).
   #
   # A `xcode-27` / `xcode-27-xlarge` (arm64) runner label DOES exist, but
   # it is explicitly a weekly-updated PREVIEW/beta image: GitHub's own
@@ -99,13 +107,54 @@ jobs:
   # not be enabled for every account or org, and its exact Xcode point
   # release can change under us week to week.
   #
-  # Decision: target `xcode-27` (it exists and is the only image meeting
-  # our floor) but keep `continue-on-error: true` with a generous
-  # `timeout-minutes`, so that a preview image which is unavailable to
-  # this account, renamed, or briefly broken by a weekly update cannot
-  # block merges to main. Revisit once `xcode-27` reaches GA — at that
-  # point drop `continue-on-error` and this comment block should be
-  # trimmed to a one-line note.
+  # Decision: target `xcode-27` (it exists and is the only image whose SDK
+  # knows about the iOS 27 symbols our `#available` guards reference) but
+  # keep `continue-on-error: true` with a generous `timeout-minutes`, so
+  # that a preview image which is unavailable to this account, renamed, or
+  # briefly broken by a weekly update cannot block merges to main. Revisit
+  # once `xcode-27` reaches GA — at that point drop `continue-on-error` and
+  # this comment block should be trimmed to a one-line note.
+  # -------------------------------------------------------------------
+  #
+  # --- What this job proves (updated 2026-09-26 for D42's two regression
+  # --- risks) -----------------------------------------------------------
+  # D42 lowered the podspec floor to iOS 16.4 with FoundationModels weak-
+  # linked, which opened two ways to silently regress:
+  #
+  #   1. D22's autolinking trap: `expo-modules-autolinking` drops any pod
+  #      whose platform exceeds the app's deployment target, *silently* —
+  #      a green build, an empty Podfile.lock entry, `unsupportedPlatform`
+  #      forever. Nothing before this job's "Assert OnDeviceLlm is linked"
+  #      step would have caught a future change that raised the podspec
+  #      floor back above the example's 16.4 default target.
+  #   2. A strong (non-weak) reference into FoundationModels, which would
+  #      abort the process at launch on any iOS below 26 (dyld cannot
+  #      resolve a missing strong dylib). The podspec's `weak_frameworks`
+  #      line only states intent; the "Check FoundationModels is weak-
+  #      linked" step below checks the actual load command in the built
+  #      binary.
+  #
+  # So, end to end, this job now proves: the module is autolinked at the
+  # example's default (16.4) deployment target; the **Release**
+  # configuration — the shipping config, and the one whose binary layout
+  # matters, since Release links app code into the main executable while
+  # Debug puts it in a separate `*.debug.dylib` (docs/research/ios26-
+  # compat.md "A Release build") — compiles clean at that target; and
+  # FoundationModels is weak-linked in that Release binary. The Debug
+  # simulator build is kept alongside it (not replaced) because it is the
+  # configuration docs/research/ios26-compat.md's own Simulator runs were
+  # built from, so keeping it here catches anything specific to the
+  # simulator SDK/triple that the device-only Release build would miss,
+  # for a small fixed extra cost on an already-generous 60-minute preview-
+  # runner budget; the weak-link check runs against both app bundles, not
+  # only the Release one.
+  #
+  # Because `xcode-27` is a preview runner and this job keeps
+  # `continue-on-error: true`, a failure here shows up as a **failed job
+  # inside an otherwise-green workflow run** — the top-level workflow
+  # badge stays green even when this job fails. Reviewers must open this
+  # job's own result, not just glance at the workflow badge, to know
+  # whether the D42 regressions above are still guarded.
   # -------------------------------------------------------------------
   example-ios:
     name: example app iOS build (compile check)
@@ -135,10 +184,11 @@ jobs:
 
       - name: Prebuild iOS native project
         working-directory: example
-        # Regenerates the gitignored example/ios/ from app.json + the
-        # expo-build-properties config plugin, which sets
-        # ios.deploymentTarget to 27.0 (DECISIONS.md D4). `--no-install`
-        # skips prebuild's own npm/CocoaPods install so a failure there is
+        # Regenerates the gitignored example/ios/ from app.json. There is no
+        # deployment-target override (expo-build-properties was dropped along
+        # with the iOS 27 floor — DECISIONS.md D42): the app builds at the
+        # Expo template's default target, 16.4. `--no-install` skips
+        # prebuild's own npm/CocoaPods install so a failure there is
         # attributable to the explicit `pod install` step below instead.
         #
         # Scene-lifecycle finding (verified 2026-09-22 against a local
@@ -152,9 +202,32 @@ jobs:
 
       - name: pod install
         working-directory: example/ios
+        # LANG/LC_ALL: CocoaPods under Ruby 4 (as shipped by recent Xcode
+        # preview runners, including xcode-27) can hit an encoding error
+        # during `pod install` under the runner's default locale — the same
+        # error seen locally while producing the D42 build evidence.
+        env:
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
         run: pod install
 
-      - name: xcodebuild (generic iphonesimulator destination, compile only)
+      - name: Assert OnDeviceLlm is linked (D22 silent-drop guard)
+        working-directory: example/ios
+        # D22's trap is a *green* build with the module silently missing:
+        # autolinking drops any pod above the app's deployment target
+        # without failing `pod install`. Podfile.lock is the only place
+        # that absence is visible before a runtime `requireNativeModule`
+        # failure, so check it explicitly rather than trusting a build
+        # success.
+        run: |
+          if ! grep -qE '^\s*-\s*OnDeviceLlm \(' Podfile.lock; then
+            echo "::error::OnDeviceLlm is missing from Podfile.lock — the module was silently dropped by autolinking (DECISIONS.md D22). Check the podspec's platform floor against the example's deployment target." >&2
+            exit 1
+          fi
+          echo "OK: OnDeviceLlm is present in Podfile.lock"
+          grep -E '^\s*-\s*OnDeviceLlm \(' Podfile.lock
+
+      - name: xcodebuild Debug (generic iphonesimulator destination, compile only)
         working-directory: example/ios
         run: |
           xcodebuild \
@@ -162,7 +235,42 @@ jobs:
             -scheme ondevicellmexample \
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
             build
+
+      - name: xcodebuild Release (generic iOS device destination, unsigned)
+        working-directory: example/ios
+        # The shipping configuration, and the one whose binary layout the
+        # weak-link check below cares about: Debug puts app code in a
+        # separate `*.debug.dylib`, while Release links it into the main
+        # executable (docs/research/ios26-compat.md "A Release build").
+        # `-sdk iphoneos -destination generic/platform=iOS` compiles for a
+        # real device without needing one attached; CODE_SIGNING_ALLOWED=NO
+        # skips signing, which this unattended compile check has no
+        # identity for anyway.
+        env:
+          LANG: en_US.UTF-8
+          LC_ALL: en_US.UTF-8
+        run: |
+          xcodebuild \
+            -workspace ondevicellmexample.xcworkspace \
+            -scheme ondevicellmexample \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build-release \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Check FoundationModels is weak-linked (Release)
+        run: |
+          ./scripts/check-weak-link.sh \
+            example/ios/build-release/Build/Products/Release-iphoneos/ondevicellmexample.app
+
+      - name: Check FoundationModels is weak-linked (Debug simulator)
+        run: |
+          ./scripts/check-weak-link.sh \
+            example/ios/build/Build/Products/Debug-iphonesimulator/ondevicellmexample.app
 
   # Compile-check the example app for Android (best-effort mirror of the
   # iOS job; not called out with the same platform-floor caveats since

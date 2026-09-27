@@ -14,8 +14,9 @@
  * `unsupportedPlatform`.
  *
  * Phase 3 steps 1-7: availability + capabilities + locales, `generate` and
- * `stream` with working cancellation, prewarming, exact token counting,
- * structured output, and tool calling.
+ * `stream` with working cancellation, prewarming, token counting (exact on
+ * iOS 26.4+, estimated on the rest of the iOS 26.0+ floor — DECISIONS.md
+ * D42/D10), structured output, and tool calling.
  */
 
 import { AppleProvider, type AppleProviderConfig } from './provider';

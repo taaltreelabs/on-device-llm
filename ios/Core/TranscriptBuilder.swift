@@ -11,6 +11,7 @@ import Foundation
 import FoundationModels
 
 /// Everything one request needs to build a session and call it.
+@available(iOS 26.0, macOS 26.0, *)
 struct PreparedRequest: Sendable {
   /// History. Does **not** contain the message being answered — see D17 below.
   let transcript: Transcript
@@ -19,6 +20,7 @@ struct PreparedRequest: Sendable {
   let options: GenerationOptions
 }
 
+@available(iOS 26.0, macOS 26.0, *)
 enum TranscriptBuilder {
   /// Marker prefix the context manager puts on rolling summaries
   /// (DECISIONS.md D13). Only used to keep the instructions readable.

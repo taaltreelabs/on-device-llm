@@ -20,8 +20,11 @@ npm install @taaltreelabs/on-device-llm
 ```
 
 The Apple provider is a native Expo module, so an iOS build needs a development client
-(`npx expo run:ios`), not Expo Go, and the app's iOS deployment target must be **27.0** —
-see [Troubleshooting](#the-native-module-is-missing-at-runtime-though-the-build-was-green).
+(`npx expo run:ios`), not Expo Go. No deployment-target change is needed — the package
+links at the Expo template's default target. At runtime, the on-device model requires
+**iOS 26 or later** with Apple Intelligence enabled; older iOS routes to your cloud
+provider automatically (see [What differs on iOS 26](#what-differs-on-ios-26) and
+[Troubleshooting](#the-native-module-is-missing-at-runtime-though-the-build-was-green)).
 Add the package to `plugins` in `app.json` too. Its config plugin applies the native patch a
 freshly prebuilt Expo 57 app needs before it will launch on the iOS 27 SDK — see
 [the app crashes at launch](#the-app-crashes-at-launch-with-uiscene-life-cycle-is-required):
@@ -138,15 +141,15 @@ void rollingSummary;
 
 ## Requirements and compatibility
 
-| Requirement                   | Value                                                                                                                                                                                                                                                                    |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| iOS / macOS (on-device model) | **27.0 or newer** (DECISIONS.md D4). iOS 26 shipped the framework; it is deliberately not supported, and reports `unsupportedPlatform`.                                                                                                                                  |
-| Expo SDK                      | 57                                                                                                                                                                                                                                                                       |
-| React Native                  | 0.86                                                                                                                                                                                                                                                                     |
-| React                         | Optional peer dependency; required only for `.../react`                                                                                                                                                                                                                  |
-| Runtime dependencies          | None                                                                                                                                                                                                                                                                     |
-| Device                        | Apple Intelligence-eligible hardware, with Apple Intelligence turned on and the model assets downloaded                                                                                                                                                                  |
-| Android                       | Cloud routing (`openai`) works out of the box, same as any other JS runtime. On-device (Gemini Nano) ships separately via [`@taaltreelabs/on-device-llm-android`](https://github.com/taaltreelabs/on-device-llm-android) — see [Android on-device?](#android-on-device). |
+| Requirement                   | Value                                                                                                                                                                                                                                                                                                         |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| iOS / macOS (on-device model) | **26.0 or newer** at runtime, with Apple Intelligence enabled (DECISIONS.md D42). The package itself links into apps at iOS 16.4 or above; below iOS 26 it reports `unsupportedPlatform` and routes to your cloud provider. See [What differs on iOS 26](#what-differs-on-ios-26) for the gaps versus iOS 27. |
+| Expo SDK                      | 57                                                                                                                                                                                                                                                                                                            |
+| React Native                  | 0.86                                                                                                                                                                                                                                                                                                          |
+| React                         | Optional peer dependency; required only for `.../react`                                                                                                                                                                                                                                                       |
+| Runtime dependencies          | None                                                                                                                                                                                                                                                                                                          |
+| Device                        | Apple Intelligence-eligible hardware, with Apple Intelligence turned on and the model assets downloaded                                                                                                                                                                                                       |
+| Android                       | Cloud routing (`openai`) works out of the box, same as any other JS runtime. On-device (Gemini Nano) ships separately via [`@taaltreelabs/on-device-llm-android`](https://github.com/taaltreelabs/on-device-llm-android) — see [Android on-device?](#android-on-device).                                      |
 
 Everything except the Apple provider runs anywhere a modern JavaScript runtime does,
 including Node and the browser.
@@ -179,13 +182,42 @@ blocking", not "the next request will succeed"** (D9). See
 | Streaming         | Yes, real token deltas                                                                                    | Yes, with a streaming `fetch` injected; otherwise one aggregated delta | Yes, scripted  |
 | Structured output | Yes, when the model reports guided generation                                                             | Yes (`response_format`), subject to your endpoint                      | Scripted only  |
 | Tool calling      | Yes, with timeout and cancellation                                                                        | **No** — a request carrying `tools` is rejected as `invalidRequest`    | No             |
-| Token counting    | `exact` (native `tokenCount`)                                                                             | `estimated` (`estimateTokens`)                                         | Configurable   |
+| Token counting    | `exact` (native `tokenCount`) from iOS 26.4; `estimated` below that                                       | `estimated` (`estimateTokens`)                                         | Configurable   |
 | Context window    | Reported by the device (4K or 8K depending on the model variant); `UNKNOWN` when the framework cannot say | Whatever you configure; `UNKNOWN` by default                           | Configurable   |
 | Locales           | 24 BCP-47 tags, enumerated                                                                                | `UNKNOWN` unless you configure them                                    | Configurable   |
 
 `UNKNOWN` is a real, typed value exported from `core`, not a stand-in for zero or
 infinity. The context manager and the router both handle it explicitly rather than
 guessing (D11).
+
+### What differs on iOS 26
+
+The on-device model runs from iOS 26.0, not only 27.0 (DECISIONS.md D42), but the iOS 26
+bridge has less to work with than iOS 27's. All gaps disappear at iOS 27; none of them
+affect the `openai` provider or the router.
+
+| Area                                               | iOS 27+                                 | iOS 26.x                                                                          |
+| -------------------------------------------------- | --------------------------------------- | --------------------------------------------------------------------------------- |
+| `contextOverflow` error                            | Carries `contextSize` and `tokenCount`  | Neither field is present                                                          |
+| `decodingFailure` error                            | Carries raw model output (`rawContent`) | No raw output                                                                     |
+| `unsupportedLocale` error                          | Names the offending `locale`            | No `locale`                                                                       |
+| `rateLimited` error                                | Carries `resetDate`                     | No `resetDate`                                                                    |
+| `usage` / `finishReason`                           | Real per-response `usage`               | No `usage`; `finishReason` is always `'stop'`, even when truncated                |
+| Token counting                                     | Always `exact`                          | `exact` from 26.4 onward, `estimated` on 26.0–26.3 (256-token safety margin, D10) |
+| `modelLabel`                                       | `variant.displayName`, queried live     | Fixed string `"Apple Foundation Model"`                                           |
+| `supportsVision` / `supportsReasoning`             | Queried live                            | Fixed `false`                                                                     |
+| `supportsGuidedGeneration` / `supportsToolCalling` | Queried live                            | Fixed `true`                                                                      |
+| `contextWindow`                                    | Device-reported                         | `4096` below iOS 26.4                                                             |
+
+**Honesty note:** the iOS 26 fallbacks above have been exercised live on iOS 26.0 and
+26.5 Simulators (capability fallbacks, estimated token counting, and the iOS 26 error
+mapping confirmed). On 26.5, where the on-device model fails with a transient error, the
+router's fallback to the cloud provider completed end to end. A successful on-device
+generation on a real iOS 26 device is still pending.
+The below-26 `unsupportedPlatform` path has now run live too, on an iOS 18.6 Simulator,
+where the app launched normally and every call reported the documented fallback — but
+still only on a Simulator, not a physical pre-26 iPhone — see
+`docs/research/ios26-compat.md` for exactly what was run versus only compiled.
 
 ## Privacy
 
@@ -509,16 +541,20 @@ Apple provider with no fallback, you will see the raw error; that is the honest 
 model, or `requireNativeModule('OnDeviceLlm')` fails outright.
 
 **Cause.** `expo-modules-autolinking` filters modules by deployment target. The podspec
-declares iOS 27.0 (D4). If your app's Podfile platform is lower — the Expo template
-default is much lower — `pod install` **silently omits the module entirely**:
-`Podfile.lock` has no entry for it, and the build succeeds because nothing referenced it.
+now declares iOS 16.4 (DECISIONS.md D42) — `ExpoModulesCore`'s own floor and the Expo
+template's default — so this only bites an app whose own deployment target is set
+_below_ 16.4. If your app's Podfile platform is lower than that, `pod install`
+**silently omits the module entirely**: `Podfile.lock` has no entry for it, and the build
+succeeds because nothing referenced it. This is unrelated to the on-device model's own
+iOS 26 floor — a device below 26 still links the module and gets `unsupportedPlatform`
+from it at runtime, which is the working, intended fallback path (see
+[What differs on iOS 26](#what-differs-on-ios-26)).
 
-**Fix.** Raise `ios.deploymentTarget` to `27.0` (via `expo-build-properties` in
-`app.json`, as the example app does), then reinstall pods. Raise the app target's own
-`IPHONEOS_DEPLOYMENT_TARGET` too, or the app's Swift fails to compile with _"compiling for
-iOS 16.4, but module 'OnDeviceLlm' has a minimum deployment target of iOS 27.0"_. Check
-`Podfile.lock` for an `OnDeviceLlm` entry as the confirmation step — a green build is not
-one.
+**Fix.** Raise your app's deployment target to at least `16.4` (via `expo-build-properties`
+in `app.json`, or your Podfile directly), then reinstall pods. Raise the app target's own
+`IPHONEOS_DEPLOYMENT_TARGET` too, or the app's Swift fails to compile with a "module
+'OnDeviceLlm' has a minimum deployment target of iOS 16.4" error. Check `Podfile.lock` for
+an `OnDeviceLlm` entry as the confirmation step — a green build is not one.
 
 ### The app crashes at launch with "UIScene life cycle is required"
 
@@ -673,9 +709,10 @@ packages give you the bridge alone, and all of them are MIT-licensed:
   compatibility matters more to you than availability reason codes, pre-flight token
   counting, or capability discovery, none of which the AI SDK spec has a place for.
 - **[`expo-foundation-models`](https://github.com/SwiftyJunnos/expo-foundation-models)** —
-  an Expo module with the most diagnostic-rich availability surface of the group, real
-  locale support, and a documented dual iOS 26/27 path. Choose it if you need iOS 26
-  support or single-prompt generation with good diagnostics.
+  an Expo module with the most diagnostic-rich availability surface of the group and real
+  locale support. Both packages now handle iOS 26 and 27; choose it if you want
+  single-prompt generation with good diagnostics instead of this package's stateless,
+  router-oriented interface.
 - **[`react-native-foundation-models`](https://github.com/henrypldev/react-native-foundation-models)**
   — a Nitro module with streaming and tool calling, small but carefully engineered. Choose
   it if you are already invested in Nitro. Note that it emits cumulative snapshots rather
@@ -683,9 +720,11 @@ packages give you the bridge alone, and all of them are MIT-licensed:
 
 Also look elsewhere if:
 
-- **You target iOS below 27.** The floor is deliberate (D4) and there are no compatibility
-  paths; on iOS 26 this package reports `unsupportedPlatform` and routes to your cloud
-  provider. `expo-foundation-models` handles 26 and 27 side by side.
+- **You need the on-device model on iOS below 26.** There is no compatibility path below
+  the framework's own floor (DECISIONS.md D42); the package reports `unsupportedPlatform`
+  there and routes to your cloud provider. On iOS 26.x itself, the on-device model works
+  with the gaps listed under [What differs on iOS 26](#what-differs-on-ios-26), and iOS 26
+  device verification of that is still pending.
 - **You want embeddings, speech, transcription, image generation, adapter/LoRA loading, or
   retrieval.** All explicitly out of scope, and other packages cover the first three.
 - **You want UI components.** Out of scope. The example app is a manual test rig, not a
@@ -752,8 +791,9 @@ Two more need real hardware or a real server:
 The example app (`example/`) is an Expo dev-client rig with a provider toggle
 (`MockProvider` or the real router), a "simulate on-device unavailable" switch that moves
 the conversation to the cloud provider on the next turn with history intact, a
-structured-output demo, and a tool round-trip demo. It needs `npx expo run:ios` and an iOS
-deployment target of 27.0.
+structured-output demo, and a tool round-trip demo. It needs `npx expo run:ios`; no
+deployment-target override is required, since the module links at the Expo template's
+default target.
 
 ## License
 

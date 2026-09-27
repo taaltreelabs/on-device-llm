@@ -12,10 +12,16 @@
 //  Shape of the bridge:
 //
 //  - `availability()`  -> { available, reason?, detail? }
-//  - `capabilities()`  -> { contextWindow, locales, modelLabel, supports* }
+//  - `capabilities()`  -> { contextWindow, locales, modelLabel, supports*,
+//                           tokenCounting: "exact" | "estimated",
+//                           usageReporting: Bool }
+//        every key is present on every OS; the iOS 27-only ones fall back to
+//        fixed values on iOS 26 (ios/Core/ModelInfo.swift)
 //  - `supportsLocale(tag)` -> Bool
 //  - `prewarm(messages?)` -> Bool
 //  - `countTokens(messages)` -> { ok: true, count } | { ok: false, error }
+//        `error.code == "invalidRequest"` below iOS 26.4, where the framework
+//        has no token counter (`capabilities().tokenCounting == "estimated"`)
 //  - `generate(requestId, messages, temperature?, maxOutputTokens?, schemaJson?)`
 //        -> { ok: true, result } | { ok: false, error }
 //  - `startStream(requestId, messages, temperature?, maxOutputTokens?,
@@ -33,6 +39,21 @@
 //  mapping errors natively. One result shape for both paths also means the
 //  TypeScript side has exactly one error decoder.
 //
+//  Platform floor: iOS 16.4, ExpoModulesCore's own (ios/OnDeviceLlm.podspec),
+//  so that autolinking does not silently drop this module from an app that
+//  still supports iOS older than 26 (DECISIONS.md D22). FoundationModels is
+//  iOS 26.0 and weak-linked. This class is the one declaration that cannot be
+//  `@available(iOS 26.0, *)`, because Expo instantiates it on every OS, so
+//  every `AsyncFunction` body starts with `guard #available(iOS 26.0, *)` and
+//  answers from `UnsupportedPlatform` below it, in the same shapes as above:
+//  `availability()` reports `unavailable` / `unsupportedPlatform`, the result
+//  functions return that as an `unavailable` error, and the Bool functions
+//  return `false`. Nothing below the guard runs on older iOS, so no
+//  FoundationModels symbol is ever touched there. Everything in `ios/Core`
+//  that names a FoundationModels type is `@available(iOS 26.0, *)` and gates
+//  its newer API (26.4 token counting, iOS 27 usage/variant/capabilities and
+//  error types) internally. See docs/research/ios26-compat.md.
+//
 
 import ExpoModulesCore
 import FoundationModels
@@ -42,7 +63,53 @@ import FoundationModels
 /// interleave into the wrong consumer.
 private let streamEventName = "onStreamEvent"
 
+/// Every answer this module gives on iOS older than 26, where FoundationModels
+/// does not exist. Same shapes as the real answers, so the TypeScript side
+/// needs no second decoder: `src/apple/errors.ts` already accepts
+/// `unsupportedPlatform` as an unavailable reason, and the router falls
+/// through past it to the next provider exactly as it does on Android (D38).
+private enum UnsupportedPlatform {
+  static let detail =
+    "Apple FoundationModels needs iOS 26 or later; this device runs an older iOS."
+
+  // Computed rather than stored: `[String: Any]` is not `Sendable`, so a
+  // stored static would not pass Swift 6's global-state checks.
+  static var availability: [String: Any] {
+    ["available": false, "reason": "unsupportedPlatform", "detail": detail]
+  }
+
+  /// Every key `ModelInfo.capabilities` reports, with inert values. A
+  /// `contextWindow` of `0` is the documented "unknown" (D11), and nothing
+  /// here claims a feature the device cannot run.
+  static var capabilities: [String: Any] {
+    [
+      "contextWindow": 0,
+      "locales": [String](),
+      "modelLabel": "Apple Foundation Model",
+      "supportsVision": false,
+      "supportsGuidedGeneration": false,
+      "supportsToolCalling": false,
+      "supportsReasoning": false,
+      "tokenCounting": "estimated",
+      "usageReporting": false,
+    ]
+  }
+
+  static var error: BridgeErrorPayload {
+    var payload = BridgeErrorPayload(code: "unavailable", message: detail)
+    payload.reason = "unsupportedPlatform"
+    return payload
+  }
+
+  /// The `{ ok: false, error }` result of `countTokens` and `generate`.
+  static var failure: [String: Any] {
+    ["ok": false, "error": error.toDictionary()]
+  }
+}
+
 public class OnDeviceLlmModule: Module {
+  // Neither registry names a FoundationModels type, so both are safe to
+  // create on any iOS; below 26 they simply stay empty.
   private let registry = RequestRegistry()
   private let toolRegistry = ToolCallRegistry()
 
@@ -53,16 +120,25 @@ public class OnDeviceLlmModule: Module {
 
     // MARK: Step 1 — availability, capabilities, locales
 
+    // Every body below opens with the same `guard #available`. It cannot be
+    // folded into a shared wrapper: availability refinement is lexical, so a
+    // closure passed to a helper would still be compiled for iOS 16.4 and
+    // could not name `ios/Core`. The fallback values live in one place,
+    // `UnsupportedPlatform`.
+
     AsyncFunction("availability") { () -> [String: Any] in
-      ModelInfo.availability()
+      guard #available(iOS 26.0, *) else { return UnsupportedPlatform.availability }
+      return ModelInfo.availability()
     }
 
     AsyncFunction("capabilities") { () -> [String: Any] in
-      ModelInfo.capabilities()
+      guard #available(iOS 26.0, *) else { return UnsupportedPlatform.capabilities }
+      return ModelInfo.capabilities()
     }
 
     AsyncFunction("supportsLocale") { (tag: String) -> Bool in
-      ModelInfo.supportsLocale(tag)
+      guard #available(iOS 26.0, *) else { return false }
+      return ModelInfo.supportsLocale(tag)
     }
 
     // MARK: Step 2 — generate (step 6 adds `schemaJson`)
@@ -75,7 +151,8 @@ public class OnDeviceLlmModule: Module {
         maxOutputTokens: Int?,
         schemaJson: String?
       ) async -> [String: Any] in
-      await self.runGenerate(
+      guard #available(iOS 26.0, *) else { return UnsupportedPlatform.failure }
+      return await self.runGenerate(
         requestId: requestId,
         messages: messages,
         temperature: temperature,
@@ -96,6 +173,13 @@ public class OnDeviceLlmModule: Module {
         tools: [[String: String]],
         toolCallTimeoutMs: Int?
       ) async in
+      guard #available(iOS 26.0, *) else {
+        // Emitted, like every other stream outcome: the TypeScript generator
+        // has subscribed by now and turns this into the same `LLMError` a
+        // parse failure would produce.
+        self.send(.error(UnsupportedPlatform.error), requestId: requestId)
+        return
+      }
       await self.startStream(
         requestId: requestId,
         messages: messages,
@@ -108,6 +192,9 @@ public class OnDeviceLlmModule: Module {
     }
 
     AsyncFunction("cancel") { (requestId: String) async -> Bool in
+      // Nothing is ever registered below iOS 26, so this is the answer the
+      // registries would give anyway; the guard keeps every entry point alike.
+      guard #available(iOS 26.0, *) else { return false }
       // Both registries: cancelling the generation task alone would leave a
       // `BridgedTool.call` suspended on a continuation nobody will resume
       // (DECISIONS.md D25).
@@ -118,6 +205,7 @@ public class OnDeviceLlmModule: Module {
     // MARK: Step 4 — prewarming
 
     AsyncFunction("prewarm") { (messages: [[String: String]]?) async -> Bool in
+      guard #available(iOS 26.0, *) else { return false }
       do {
         let request =
           try messages.map {
@@ -136,6 +224,7 @@ public class OnDeviceLlmModule: Module {
     // MARK: Step 5 — token counting
 
     AsyncFunction("countTokens") { (messages: [[String: String]]) async -> [String: Any] in
+      guard #available(iOS 26.0, *) else { return UnsupportedPlatform.failure }
       do {
         let request = try BridgeRequest.parse(
           messages: messages, temperature: nil, maximumResponseTokens: nil)
@@ -150,6 +239,7 @@ public class OnDeviceLlmModule: Module {
 
     AsyncFunction("resolveToolCall") {
       (callId: String, resultJson: String?, errorMessage: String?) async -> Bool in
+      guard #available(iOS 26.0, *) else { return false }
       if let errorMessage {
         return await self.toolRegistry.fail(callId: callId, message: errorMessage)
       }
@@ -167,6 +257,7 @@ public class OnDeviceLlmModule: Module {
 
   // MARK: - Implementation
 
+  @available(iOS 26.0, *)
   private func runGenerate(
     requestId: String,
     messages: [[String: String]],
@@ -207,6 +298,7 @@ public class OnDeviceLlmModule: Module {
     }
   }
 
+  @available(iOS 26.0, *)
   private func startStream(
     requestId: String,
     messages: [[String: String]],

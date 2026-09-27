@@ -7,10 +7,16 @@
 //  unmapped throw is not a cosmetic problem: it is a request that cannot be
 //  retried, failed over, or reported.
 //
-//  Platform floor is iOS 27 / macOS 27 (DECISIONS.md D4), so only the iOS 27
-//  taxonomy is handled: `LanguageModelError` replaced iOS 26's
-//  `LanguageModelSession.GenerationError` wholesale and there is no
-//  dual-taxonomy path to write.
+//  Two taxonomies, because the platform floor is iOS 26.0 / macOS 26.0 — the
+//  release that shipped FoundationModels (docs/research/ios26-compat.md; this
+//  supersedes the iOS 27 floor of DECISIONS.md D4). iOS 27 replaced iOS 26's
+//  `LanguageModelSession.GenerationError` wholesale with `LanguageModelError`,
+//  `LanguageModelSession.Error`, `SystemLanguageModel.Error` and
+//  `GeneratedContent.ParsingError` (docs/research/sdk-surface.md §5), and all
+//  four of those are `@available(iOS 27.0, macOS 27.0, *)`. So the mapper is
+//  dual-path: the iOS 27 types under `#available`, then the deprecated iOS 26
+//  enum, then the untyped `NSError` fallback. Both typed paths land on the
+//  same bridge codes, so TypeScript never learns which OS threw.
 //
 
 import Foundation
@@ -18,12 +24,17 @@ import FoundationModels
 
 /// Map anything thrown by the framework onto a `BridgeErrorPayload`.
 ///
-/// Mapping table (docs/research/sdk-surface.md §5):
+/// Mapping table (docs/research/sdk-surface.md §5). The iOS 27 rows are tried
+/// only under `#available(iOS 27.0, macOS 27.0, *)`; the iOS 26 rows after
+/// them, on every OS (the comment in the body says why).
 ///
 /// | thrown | code | carried through |
 /// |---|---|---|
 /// | `BridgeError` (ours) | as constructed | — |
 /// | `CancellationError` | `cancelled` | — |
+/// | `LanguageModelSession.ToolCallError` (26+) | the wrapped error's | message prefixed with the tool |
+/// | **iOS 27 taxonomy** | | |
+/// | `GeneratedContent.ParsingError` | `unknown` (transient) | `rawContent` |
 /// | `LanguageModelError.contextSizeExceeded` | `contextOverflow` | `contextSize`, `tokenCount` |
 /// | `LanguageModelError.guardrailViolation` | `guardrail` | — |
 /// | `LanguageModelError.refusal` | `guardrail` | — |
@@ -36,7 +47,21 @@ import FoundationModels
 /// | `LanguageModelSession.Error.concurrentRequests` | `invalidRequest` | — |
 /// | `LanguageModelSession.Error.transcriptMutationWhileResponding` | `invalidRequest` | — |
 /// | `SystemLanguageModel.Error.assetsUnavailable` | `unavailable` | `reason: modelNotReady` |
+/// | **iOS 26 taxonomy** (`LanguageModelSession.GenerationError`, deprecated in 27) | | |
+/// | `.exceededContextWindowSize` | `contextOverflow` | — (no `contextSize`/`tokenCount`: the 26 payload has neither) |
+/// | `.assetsUnavailable` | `unavailable` | `reason: modelNotReady` |
+/// | `.guardrailViolation` | `guardrail` | — |
+/// | `.refusal` | `guardrail` | — |
+/// | `.unsupportedGuide` | `invalidRequest` | — |
+/// | `.unsupportedLanguageOrLocale` | `unsupportedLocale` | — (the 26 payload does not name the locale) |
+/// | `.decodingFailure` | `unknown` (transient) | — (no `rawContent`: the 26 payload has none) |
+/// | `.rateLimited` | `rateLimited` | — (no `resetDate`) |
+/// | `.concurrentRequests` | `invalidRequest` | — |
+/// | **either** | | |
 /// | anything else (`NSError`) | `unknown` (transient) | `nativeDomain`, `nativeCode` |
+///
+/// Every iOS 26 row carries `GenerationError.Context.debugDescription` as
+/// `nativeDetail` — on iOS 26 it is the only diagnostic the framework gives.
 ///
 /// Two mappings deserve their reasons in writing:
 ///
@@ -53,6 +78,7 @@ import FoundationModels
 ///   taxonomy's transient lane (D9) and `transient` is exactly the hint the
 ///   Phase 4 router needs. A `timeout` code would say more, but nothing
 ///   consumes it yet.
+@available(iOS 26.0, macOS 26.0, *)
 func mapNativeError(_ error: Error) -> BridgeErrorPayload {
   if let bridge = error as? BridgeError {
     return bridge.payload
@@ -71,6 +97,29 @@ func mapNativeError(_ error: Error) -> BridgeErrorPayload {
     return payload
   }
 
+  if #available(iOS 27.0, macOS 27.0, *) {
+    if let payload = mapModernError(error) {
+      return payload
+    }
+  }
+
+  // Tried on iOS 27 too, not only in an `else`: the deprecated enum still
+  // exists there, and if any code path of the framework still throws it, a
+  // typed mapping beats the untyped fallback. On iOS 26 it is the only typed
+  // taxonomy there is.
+  let legacyMapper: any GenerationErrorMapping = LegacyGenerationErrorMapper()
+  if let payload = legacyMapper.map(error) {
+    return payload
+  }
+
+  return mapUntyped(error)
+}
+
+// MARK: - iOS 27 taxonomy
+
+/// The four iOS 27 error types, or `nil` when `error` is none of them.
+@available(iOS 27.0, macOS 27.0, *)
+private func mapModernError(_ error: Error) -> BridgeErrorPayload? {
   if let parsingError = error as? GeneratedContent.ParsingError {
     // The model produced output that does not parse against the schema. The
     // raw text is the only evidence of what went wrong, and it is the first
@@ -96,12 +145,10 @@ func mapNativeError(_ error: Error) -> BridgeErrorPayload {
   if let assetError = error as? SystemLanguageModel.Error {
     return map(assetError)
   }
-
-  return mapUntyped(error)
+  return nil
 }
 
-// MARK: - Typed cases
-
+@available(iOS 27.0, macOS 27.0, *)
 private func map(_ error: LanguageModelError) -> BridgeErrorPayload {
   switch error {
   case let .contextSizeExceeded(detail):
@@ -181,6 +228,7 @@ private func map(_ error: LanguageModelError) -> BridgeErrorPayload {
   }
 }
 
+@available(iOS 27.0, macOS 27.0, *)
 private func map(_ error: LanguageModelSession.Error) -> BridgeErrorPayload {
   switch error {
   case .concurrentRequests:
@@ -204,6 +252,7 @@ private func map(_ error: LanguageModelSession.Error) -> BridgeErrorPayload {
   }
 }
 
+@available(iOS 27.0, macOS 27.0, *)
 private func map(_ error: SystemLanguageModel.Error) -> BridgeErrorPayload {
   switch error {
   case let .assetsUnavailable(detail):
@@ -220,6 +269,125 @@ private func map(_ error: SystemLanguageModel.Error) -> BridgeErrorPayload {
       code: "unknown", message: "The system model failed for an unrecognised reason")
     payload.transient = true
     payload.nativeDetail = String(describing: error)
+    return payload
+  }
+}
+
+// MARK: - iOS 26 taxonomy (deprecated in 27)
+
+/// The non-deprecated face of the iOS 26 mapper.
+///
+/// `LanguageModelSession.GenerationError` and every one of its cases are
+/// `deprecated: 27.0`. Naming them is unavoidable — this is the only typed
+/// error iOS 26 throws — but a build with a 27.0 deployment target (a consumer
+/// app whose Podfile raises every pod's target, say) would otherwise emit nine
+/// deprecation warnings from this file, and a warning nobody can act on
+/// teaches people to ignore the ones they can. So the silencing is local and
+/// deliberate rather than a repo-wide flag:
+///
+/// 1. `LegacyGenerationErrorMapper.map` is itself `deprecated: 27.0`, which
+///    makes the references *inside* it legal without a diagnostic (a
+///    deprecated context may use deprecated API).
+/// 2. It is called through this protocol requirement, which is not
+///    deprecated, so the call site in `mapNativeError` is silent too.
+///
+/// Verified with `swiftc -typecheck` at both a 26.0 and a 27.0 target: zero
+/// warnings either way. Calling the static method directly instead brings one
+/// warning back at 27.0.
+private protocol GenerationErrorMapping {
+  func map(_ error: Error) -> BridgeErrorPayload?
+}
+
+@available(iOS 26.0, macOS 26.0, *)
+private struct LegacyGenerationErrorMapper: GenerationErrorMapping {
+  /// `LanguageModelSession.GenerationError` -> payload, or `nil` when `error`
+  /// is not one. Mapped to the same codes as the iOS 27 rows it was replaced
+  /// by (sdk-surface.md §5's replacement column), minus the fields the iOS 26
+  /// payload never had: a bare `Context` with a `debugDescription` is all any
+  /// case carries.
+  @available(iOS, deprecated: 27.0, message: "Maps the iOS 26 taxonomy; see GenerationErrorMapping")
+  @available(macOS, deprecated: 27.0, message: "Maps the iOS 26 taxonomy; see GenerationErrorMapping")
+  func map(_ error: Error) -> BridgeErrorPayload? {
+    guard let generationError = error as? LanguageModelSession.GenerationError else {
+      return nil
+    }
+    var payload: BridgeErrorPayload
+    let context: LanguageModelSession.GenerationError.Context
+
+    switch generationError {
+    case let .exceededContextWindowSize(detail):
+      // No `contextSize`/`tokenCount`: iOS 26 does not say by how much. The
+      // context manager then corrects nothing and keeps its estimate (D10/D11)
+      // — worse than on 27, but not wrong.
+      payload = BridgeErrorPayload(
+        code: "contextOverflow",
+        message: "The request exceeds the model's context window")
+      context = detail
+
+    case let .assetsUnavailable(detail):
+      // Same reasoning as the iOS 27 `SystemLanguageModel.Error` row (D9).
+      payload = BridgeErrorPayload(
+        code: "unavailable", message: "The model's assets are unavailable")
+      payload.reason = "modelNotReady"
+      context = detail
+
+    case let .guardrailViolation(detail):
+      payload = BridgeErrorPayload(code: "guardrail", message: "Blocked by a safety guardrail")
+      context = detail
+
+    case let .refusal(_, detail):
+      // As on 27: collapsed onto `guardrail`, and the `Refusal`'s
+      // `explanation` (a second generation) is never fetched.
+      payload = BridgeErrorPayload(code: "guardrail", message: "The model refused the request")
+      context = detail
+
+    case let .unsupportedGuide(detail):
+      payload = BridgeErrorPayload(
+        code: "invalidRequest",
+        message: "The model does not support a constraint in the supplied schema")
+      context = detail
+
+    case let .unsupportedLanguageOrLocale(detail):
+      // No `locale`: the 26 payload does not say which one. `LLMError`'s
+      // `locale` detail is optional for exactly this kind of case.
+      payload = BridgeErrorPayload(
+        code: "unsupportedLocale",
+        message: "The model does not support this language or locale")
+      context = detail
+
+    case let .decodingFailure(detail):
+      // The iOS 26 ancestor of `GeneratedContent.ParsingError`, and mapped the
+      // same way — `unknown`, transient — but without `rawContent`, which only
+      // the 27 type carries.
+      payload = BridgeErrorPayload(
+        code: "unknown",
+        message: "The model's structured output could not be parsed against the schema")
+      payload.transient = true
+      payload.nativeDomain = "FoundationModels.LanguageModelSession.GenerationError"
+      context = detail
+
+    case let .rateLimited(detail):
+      // No `resetDate` on 26; the router falls back on its own backoff.
+      payload = BridgeErrorPayload(code: "rateLimited", message: "Rate limited by the system")
+      context = detail
+
+    case let .concurrentRequests(detail):
+      // Unreachable under session-per-request, as on 27; `invalidRequest` so
+      // it is never retried.
+      payload = BridgeErrorPayload(
+        code: "invalidRequest",
+        message: "The session is already responding to another request")
+      context = detail
+
+    @unknown default:
+      var unknown = BridgeErrorPayload(
+        code: "unknown", message: "The model failed for an unrecognised reason")
+      unknown.transient = true
+      unknown.nativeDetail = String(describing: generationError)
+      return unknown
+    }
+
+    payload.nativeDetail = context.debugDescription
     return payload
   }
 }

@@ -24,14 +24,6 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      [
-        "expo-build-properties",
-        {
-          "ios": {
-            "deploymentTarget": "27.0"
-          }
-        }
-      ],
       "../app.plugin.js"
     ]
   }
