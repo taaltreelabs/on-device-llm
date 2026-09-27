@@ -83,14 +83,22 @@ jobs:
   # so this job runs `expo prebuild` itself rather than checking anything
   # out.
   #
-  # --- Xcode 27 runner-image finding (researched 2026-09-22) -------------
-  # DECISIONS.md D4 pins the platform floor at iOS 27 / Xcode 27.1. As of
-  # this writing (see https://github.com/actions/runner-images), GitHub's
-  # general-availability hosted macOS image is `macos-26`, which ships
-  # Xcode 26.0 through 26.6 (iOS SDK up to 26.5) — below our floor, so it
-  # cannot build against the OnDeviceLlm podspec's iOS 27.0 deployment
-  # target (see the autolinking deployment-target trap documented in
-  # DECISIONS.md just above D4).
+  # --- Xcode 27 runner-image finding (researched 2026-09-22; deployment
+  # --- floor lowered to iOS 26.0 2026-09-25) --------------------------
+  # The podspec's *deployment target* floor is iOS 16.4, and the on-device
+  # model's own floor is iOS 26.0 (DECISIONS.md D42), but this job still
+  # targets the `xcode-27` runner, not because of either of those, but
+  # because the Swift sources name iOS 27-only
+  # FoundationModels symbols inside `#available` guards. Referencing a
+  # symbol under `#available(iOS 27, *)` — even one never reached at the
+  # 26.0 floor — requires a compiler that knows the symbol exists at all,
+  # which means an iOS 27 SDK. As of this writing (see
+  # https://github.com/actions/runner-images), GitHub's general-
+  # availability hosted macOS image is `macos-26`, which ships Xcode 26.0
+  # through 26.6 (iOS SDK up to 26.5) and has no knowledge of those iOS 27
+  # symbols at all — so a 26.x SDK cannot *compile* this module even
+  # though the module can *run* on a 26.0 device (the runtime `#available`
+  # guard just never opens).
   #
   # A `xcode-27` / `xcode-27-xlarge` (arm64) runner label DOES exist, but
   # it is explicitly a weekly-updated PREVIEW/beta image: GitHub's own
@@ -99,13 +107,13 @@ jobs:
   # not be enabled for every account or org, and its exact Xcode point
   # release can change under us week to week.
   #
-  # Decision: target `xcode-27` (it exists and is the only image meeting
-  # our floor) but keep `continue-on-error: true` with a generous
-  # `timeout-minutes`, so that a preview image which is unavailable to
-  # this account, renamed, or briefly broken by a weekly update cannot
-  # block merges to main. Revisit once `xcode-27` reaches GA — at that
-  # point drop `continue-on-error` and this comment block should be
-  # trimmed to a one-line note.
+  # Decision: target `xcode-27` (it exists and is the only image whose SDK
+  # knows about the iOS 27 symbols our `#available` guards reference) but
+  # keep `continue-on-error: true` with a generous `timeout-minutes`, so
+  # that a preview image which is unavailable to this account, renamed, or
+  # briefly broken by a weekly update cannot block merges to main. Revisit
+  # once `xcode-27` reaches GA — at that point drop `continue-on-error` and
+  # this comment block should be trimmed to a one-line note.
   # -------------------------------------------------------------------
   example-ios:
     name: example app iOS build (compile check)
@@ -135,10 +143,11 @@ jobs:
 
       - name: Prebuild iOS native project
         working-directory: example
-        # Regenerates the gitignored example/ios/ from app.json + the
-        # expo-build-properties config plugin, which sets
-        # ios.deploymentTarget to 27.0 (DECISIONS.md D4). `--no-install`
-        # skips prebuild's own npm/CocoaPods install so a failure there is
+        # Regenerates the gitignored example/ios/ from app.json. There is no
+        # deployment-target override (expo-build-properties was dropped along
+        # with the iOS 27 floor — DECISIONS.md D42): the app builds at the
+        # Expo template's default target, 16.4. `--no-install` skips
+        # prebuild's own npm/CocoaPods install so a failure there is
         # attributable to the explicit `pod install` step below instead.
         #
         # Scene-lifecycle finding (verified 2026-09-22 against a local

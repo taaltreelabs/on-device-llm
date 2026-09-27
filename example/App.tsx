@@ -16,6 +16,7 @@
 import type {
   Availability,
   Capabilities,
+  GenerateResult,
   LLMProvider,
   Message,
   OnRoute,
@@ -23,6 +24,7 @@ import type {
   ToolDefinition,
 } from '@taaltreelabs/on-device-llm/core';
 import { useAvailability, useChat, useGenerate } from '@taaltreelabs/on-device-llm/react';
+import { requireOptionalNativeModule } from 'expo';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -344,9 +346,11 @@ export default function App() {
             footer={
               jsonConformance === undefined
                 ? undefined
-                : jsonConformance.pass
-                  ? 'PASS -- matches the schema'
-                  : `FAIL -- ${jsonConformance.reasons.join('; ')}`
+                : `${
+                    jsonConformance.pass
+                      ? 'PASS -- matches the schema'
+                      : `FAIL -- ${jsonConformance.reasons.join('; ')}`
+                  }\n${usageCaption(jsonDemo.result?.usage)}`
             }
           />
           <DemoResult
@@ -421,6 +425,47 @@ function ProviderToggle(props: {
   );
 }
 
+/**
+ * What a result's `usage` says, for the JSON demo's footer. iOS 26 has no
+ * per-response usage API, so there the result carries none; on iOS 27 it does
+ * (docs/research/ios26-compat.md). Showing both states is what lets a run on
+ * each OS confirm `capabilities().usageReporting` against a real response.
+ */
+function usageCaption(usage: GenerateResult['usage']): string {
+  return usage === undefined ? 'usage: none reported' : `usage: ${JSON.stringify(usage)}`;
+}
+
+/** The subset of the native module this screen reads directly. */
+interface NativeBridgeReadout {
+  availability(): Promise<unknown>;
+  capabilities(): Promise<unknown>;
+}
+
+/**
+ * The Apple native module's own `availability()` and `capabilities()`, before
+ * `AppleProvider` reshapes them. The panel above them shows the provider's
+ * answer; this shows the fields `Capabilities` does not carry (`usageReporting`,
+ * the raw `tokenCounting`, `contextWindow` as a number), which is the per-OS
+ * evidence docs/research/ios26-compat.md records. Read-only: it calls nothing
+ * that generates. Also logged, so a run's exact JSON lands in the Metro log.
+ */
+async function readNativeBridge(): Promise<string> {
+  if (Platform.OS !== 'ios') return 'native module: not iOS';
+  const native = requireOptionalNativeModule<NativeBridgeReadout>('OnDeviceLlm');
+  if (native === null) return 'native module: OnDeviceLlm is not linked into this build';
+  try {
+    const [availability, capabilities] = await Promise.all([
+      native.availability(),
+      native.capabilities(),
+    ]);
+    const readout = JSON.stringify({ availability, capabilities }, null, 2);
+    console.log(`[OnDeviceLlm native] ${JSON.stringify({ availability, capabilities })}`);
+    return `native module:\n${readout}`;
+  } catch (error) {
+    return `native module: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
 function AvailabilityPanel(props: {
   readonly availability: Availability | undefined;
   readonly capabilities: Capabilities | undefined;
@@ -432,6 +477,20 @@ function AvailabilityPanel(props: {
   // screen and starves the message list and input row of space. The one-line
   // summary in StatusLine stays visible either way.
   const [expanded, setExpanded] = useState(false);
+  const [nativeReadout, setNativeReadout] = useState<string | undefined>(undefined);
+  // Re-read whenever the provider's answer changes (the Refresh button, or
+  // coming back to the foreground), so the two readouts never disagree in age.
+  useEffect(() => {
+    let current = true;
+    readNativeBridge()
+      .then((readout) => {
+        if (current) setNativeReadout(readout);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, [availability, capabilities]);
   return (
     <View style={styles.panel}>
       <View style={styles.panelHeader}>
@@ -453,6 +512,7 @@ function AvailabilityPanel(props: {
           <Text style={styles.panelJson}>
             {capabilities !== undefined ? JSON.stringify(capabilities, null, 2) : 'not yet checked'}
           </Text>
+          <Text style={styles.panelJson}>{nativeReadout ?? 'native module: not yet read'}</Text>
         </ScrollView>
       ) : null}
     </View>
