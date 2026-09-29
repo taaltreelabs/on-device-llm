@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "Note to Tasks",
+    "slug": "on-device-task-extractor",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.example.ondevicetasks"
+    },
+    "plugins": ["@taaltreelabs/on-device-llm"]
+  }
+}
