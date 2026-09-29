@@ -22,6 +22,11 @@ including Node and the browser.
 
 ## Availability
 
+Building the Apple native module requires **Xcode 27+ and the iOS 27 SDK** because
+its Swift sources reference newer APIs inside availability guards. The resulting
+app can still use the on-device model on supported iOS 26+ devices. Expo Go cannot
+load the module; use a development build or a bundled native build.
+
 `provider.availability()` answers `{ available: true }` or `{ available: false, reason,
 detail? }`. The reasons:
 

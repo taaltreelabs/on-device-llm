@@ -18,6 +18,7 @@ ios/           Swift: OnDeviceLlmModule.swift (Expo glue) + Core/ (FoundationMod
 android/       stub module; on-device Android support lives in the companion package
 harness/       Swift package that exercises the framework directly against the live model
 example/       Expo dev-client app used as the manual test rig
+starters/      standalone apps that install the published npm package
 scripts/       check-isolation, fm acceptance
 docs/          this documentation, plus the Phase 0 research under docs/research/
 ```
@@ -54,3 +55,9 @@ the conversation to the cloud provider on the next turn with history intact, a
 structured-output demo, and a tool round-trip demo. It needs `npx expo run:ios`; no
 deployment-target override is required, since the module links at the Expo template's
 default target.
+
+The [task-extraction starter](starters/task-extractor) is a separate consumer app.
+Run `npm ci`, `npm run typecheck`, and `npm test` in that directory. It intentionally
+uses a pinned npm release, with no aliases to `src/`, so it exercises the public
+installation path. CI also bundles its iOS JavaScript. Follow the starter's device
+checklist before claiming live model behavior or recording a demo.

@@ -10,6 +10,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  task-extractor:
+    name: published-package task starter
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: starters/task-extractor
+    env:
+      EXPO_NO_TELEMETRY: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: starters/task-extractor/package-lock.json
+      - name: Install published SDK and app dependencies
+        run: npm ci
+      - name: Typecheck app
+        run: npm run typecheck
+      - name: Check schema and extraction boundaries
+        run: npm test
+      - name: Bundle iOS JavaScript
+        run: npx expo export --platform ios
+
   # typecheck, lint (incl. the isolation rule), unit tests, and the
   # bare-Node import test (docs/plan.md §5 Phase 5). Integration tests
   # against `fm serve` (src/**/__tests__/fm-serve*.integration.test.ts)

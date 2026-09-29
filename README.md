@@ -6,16 +6,19 @@
 
 # @taaltreelabs/on-device-llm
 
-On-device AI for React Native and Expo, with configurable cloud fallback and conversation context management.
+Add on-device AI to your Expo app—with React hooks, conversation management, and configurable cloud fallback.
 
-Run prompts with Apple's Foundation Models, connect your own Chat Completions-compatible
-endpoint, and use the same interface for both.
+Start with Apple's Foundation Models on a supported iPhone. No backend or API key
+is needed for on-device generation. Add your own Chat Completions-compatible
+endpoint when you want cloud fallback.
 
 [Documentation](https://taaltreelabs.com/docs/on-device-llm/) ·
-[Example app](example) ·
+[Task-extraction starter](https://github.com/taaltreelabs/on-device-llm/tree/main/starters/task-extractor) ·
 [Report an issue](https://github.com/taaltreelabs/on-device-llm/issues)
 
-**Early release:** the API may change before 1.0.
+**Try a useful feature:** [turn a messy note into an editable checklist](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/tutorials/expo-task-extractor.md).
+The standalone Expo starter installs this package from npm and runs extraction
+on-device, with no cloud fallback.
 
 ## Features
 
@@ -30,7 +33,7 @@ endpoint, and use the same interface for both.
 | To use…                    | You need…                                                                                                      |
 | -------------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Apple's on-device model    | iOS / macOS 26+, Apple Intelligence-eligible hardware, Apple Intelligence enabled, and downloaded model assets |
-| The Expo quick start below | An iOS development build; Expo Go cannot load the native module                                                |
+| The Expo quick start below | macOS with Xcode 27+ (iOS 27 SDK), and an iOS development build; Expo Go cannot load the native module         |
 | Cloud generation           | A Chat Completions-compatible endpoint and a model available on that endpoint                                  |
 | React hooks                | React                                                                                                          |
 
@@ -69,23 +72,80 @@ The plugin applies the scene lifecycle setup needed by the Expo 57 template when
 building with the iOS 27 SDK. If you have customized your native app, check the
 [setup troubleshooting guide](docs/troubleshooting.md#the-app-crashes-at-launch-with-uiscene-life-cycle-is-required).
 
-### 2. Add a chat component
+### 2. Run your first prompt on-device
 
-This example tries Apple first, then your backend endpoint. Replace `baseUrl` and
-`model` with your endpoint's values; `baseUrl` must include any API prefix such as
-`/v1`. The provider appends `/chat/completions`.
-
-Keep vendor API secrets on your backend. Add your app's authentication to the
-endpoint as needed; an `EXPO_PUBLIC_*` variable is part of the client bundle, not
-secret storage.
+For an Expo app with an `App.tsx` entry point, replace that file with the following.
+In an Expo Router app, put it in a route file such as `app/index.tsx` instead.
 
 ```tsx
 import { createAppleProvider } from '@taaltreelabs/on-device-llm/apple';
+import { useGenerate } from '@taaltreelabs/on-device-llm/react';
+import { Button, Text, View } from 'react-native';
+
+const apple = createAppleProvider();
+
+export default function FirstPrompt() {
+  const { generate, result, loading, error, abort } = useGenerate(apple);
+
+  async function ask() {
+    try {
+      await generate({
+        messages: [{ role: 'user', content: 'Suggest three things to pack for a train trip.' }],
+      });
+    } catch {
+      // useGenerate exposes the failure through `error` below.
+    }
+  }
+
+  return (
+    <View style={{ padding: 24, paddingTop: 64, gap: 16 }}>
+      <Text>On-device only · No cloud fallback</Text>
+      <Button
+        title={loading ? 'Thinking…' : 'Try on-device AI'}
+        disabled={loading}
+        onPress={() => void ask()}
+      />
+      {loading && <Button title="Stop" onPress={abort} />}
+      {error && <Text accessibilityRole="alert">{error.message}</Text>}
+      {!loading && !error && result && <Text>{result.text}</Text>}
+    </View>
+  );
+}
+```
+
+This uses only the Apple provider. If the device model is unavailable, the request
+fails and the error is displayed; nothing is sent to a cloud endpoint.
+The [task-extraction starter](https://github.com/taaltreelabs/on-device-llm/tree/main/starters/task-extractor)
+adds availability checks, structured output, and an editable checklist.
+
+### 3. Build and run on your iPhone
+
+```bash
+npx expo run:ios --device
+```
+
+Select an Apple Intelligence-compatible physical device with iOS 26+, Apple
+Intelligence enabled, and its model assets downloaded. Building this package
+requires **Xcode 27+**, even when deploying to iOS 26. Follow Xcode's signing
+setup if prompted. Expo Go cannot run this native module.
+
+Rebuild after native configuration changes; a JavaScript reload cannot apply them.
+If you already manage an `ios/` directory, follow the
+[native setup troubleshooting](docs/troubleshooting.md) to apply plugin changes.
+
+**Next:** [build the note-to-tasks app](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/tutorials/expo-task-extractor.md),
+or use [`useChat`](docs/context.md) for a streaming conversation with managed history.
+
+## Add cloud fallback when you need it
+
+After the on-device example works, replace its `apple` provider with a router and
+pass `llm` to `useGenerate(llm)` (or `useChat({ provider: llm })`):
+
+```ts
+import { createAppleProvider } from '@taaltreelabs/on-device-llm/apple';
 import { createRouter } from '@taaltreelabs/on-device-llm/core';
 import { createOpenAIProvider } from '@taaltreelabs/on-device-llm/openai';
-import { useChat } from '@taaltreelabs/on-device-llm/react';
 import { fetch as expoFetch } from 'expo/fetch';
-import { Button, Text, View } from 'react-native';
 
 const llm = createRouter({
   providers: [
@@ -98,55 +158,22 @@ const llm = createRouter({
     }),
   ],
 });
-
-export function Assistant() {
-  const { messages, streamingText, status, error, send, stop } = useChat({
-    provider: llm,
-    systemPrompt: 'You are a concise assistant.',
-  });
-
-  return (
-    <View>
-      {messages.map((message, index) => (
-        <Text key={index}>{message.content}</Text>
-      ))}
-      {streamingText !== undefined && <Text>{streamingText}</Text>}
-      {error && <Text accessibilityRole="alert">{error.message}</Text>}
-      <Button
-        title="Ask"
-        disabled={status !== 'idle'}
-        onPress={() => void send('What should I cook tonight?')}
-      />
-      {status !== 'idle' && <Button title="Stop" onPress={stop} />}
-    </View>
-  );
-}
 ```
 
-`useChat` manages history, fits it to the context budget, and exposes streamed text
-and errors. Passing `expo/fetch` enables cloud streaming in Expo; without a streaming
-`fetch`, cloud responses arrive as one final text delta. Apple streaming uses the
-native bridge. See the [streaming guide](docs/streaming.md)
-for other React Native setups.
+Replace `baseUrl` and `model` with your endpoint's values. Include any API prefix
+such as `/v1`; the provider appends `/chat/completions`. Keep vendor API secrets
+on your backend and add your app's authentication as needed. `EXPO_PUBLIC_*`
+values are part of the client bundle, not secret storage.
 
-For an **on-device-only** app, pass `createAppleProvider()` directly as the hook's
-`provider` and omit the router and cloud provider. Requests then fail if the device
-model cannot serve them; they are not sent to a cloud endpoint.
-
-### 3. Build and run
-
-```bash
-npx expo run:ios
-```
-
-Use a supported physical device to try on-device generation. Rebuild after native
-configuration changes; a JavaScript reload cannot apply them. If you already manage
-an `ios/` directory, follow the [native setup troubleshooting](docs/troubleshooting.md)
-to apply the plugin changes to your build.
+Update the example's “On-device only” label if you enable fallback, and show
+`result.providerId` to identify which provider actually answered. This changes
+where content can go: explain the cloud path to your users. Injecting `expo/fetch`
+also enables cloud streaming when using `useChat`; see the
+[streaming guide](docs/streaming.md).
 
 ## Cloud fallback and privacy
 
-With the quick-start router, providers are tried in preference order. By default,
+With the optional router above, providers are tried in preference order. By default,
 fallback is enabled for unavailability, context overflow, network errors, rate
 limits, unsupported languages, and errors marked transient. Guardrail fallback is
 off; cancellation and invalid requests never trigger fallback.
@@ -169,17 +196,18 @@ for controls and examples.
 
 ## Documentation
 
-| I want to…                                           | Guide                                          |
-| ---------------------------------------------------- | ---------------------------------------------- |
-| Check supported platforms, features, or availability | [Compatibility](docs/compatibility.md)         |
-| Choose imports or use the package in Node.js         | [Import paths](docs/imports.md)                |
-| Manage long chats or include current app state       | [Context management](docs/context.md)          |
-| Control provider selection and fallback              | [Routing](docs/routing.md)                     |
-| Generate structured data                             | [Structured output](docs/structured-output.md) |
-| Let the model call app functions                     | [Tool calling](docs/tools.md)                  |
-| Stream cloud responses in React Native               | [Streaming](docs/streaming.md)                 |
-| Add another provider or use a test double            | [Custom providers](docs/custom-providers.md)   |
-| Fix setup or runtime problems                        | [Troubleshooting](docs/troubleshooting.md)     |
+| I want to…                                           | Guide                                                                                                     |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Build an on-device note-to-tasks app                 | [Tutorial](https://github.com/taaltreelabs/on-device-llm/blob/main/docs/tutorials/expo-task-extractor.md) |
+| Check supported platforms, features, or availability | [Compatibility](docs/compatibility.md)                                                                    |
+| Choose imports or use the package in Node.js         | [Import paths](docs/imports.md)                                                                           |
+| Manage long chats or include current app state       | [Context management](docs/context.md)                                                                     |
+| Control provider selection and fallback              | [Routing](docs/routing.md)                                                                                |
+| Generate structured data                             | [Structured output](docs/structured-output.md)                                                            |
+| Let the model call app functions                     | [Tool calling](docs/tools.md)                                                                             |
+| Stream cloud responses in React Native               | [Streaming](docs/streaming.md)                                                                            |
+| Add another provider or use a test double            | [Custom providers](docs/custom-providers.md)                                                              |
+| Fix setup or runtime problems                        | [Troubleshooting](docs/troubleshooting.md)                                                                |
 
 Tool calling is currently supported by the Apple provider, not the cloud provider.
 Structured output support depends on the provider and schema; see the guides for
